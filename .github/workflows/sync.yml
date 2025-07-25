@@ -1,0 +1,16 @@
+name: Sync
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push changes
+        run: |
+          git remote add gitlab https://T202510013206171:${{ secrets.GITLAB_TOKEN }}@gitlab.eduxiji.net/T202510013206171/compiler2025-a.out.git
+          git push gitlab main --force
