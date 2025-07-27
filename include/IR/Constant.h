@@ -22,26 +22,26 @@ class Constant : public User {
 
 class ConstantInt : public Constant {
    private:
-    uint64_t value_;
+    uint32_t value_;
 
-    ConstantInt(IntegerType* ty, uint64_t val)
+    ConstantInt(IntegerType* ty, uint32_t val)
         : Constant(ty, ValueKind::Constant), value_(val) {}
 
    public:
-    static ConstantInt* get(IntegerType* ty, uint64_t val);
-    static ConstantInt* get(Context* ctx, unsigned bitWidth, uint64_t val);
+    static ConstantInt* get(IntegerType* ty, uint32_t val);
+    static ConstantInt* get(Context* ctx, unsigned bitWidth, uint32_t val);
     static ConstantInt* getTrue(Context* ctx);
     static ConstantInt* getFalse(Context* ctx);
 
-    int64_t getValue() const { return getSignedValue(); }
-    uint64_t getUnsignedValue() const { return value_; }
-    int64_t getSignedValue() const { return static_cast<int64_t>(value_); }
+    int32_t getValue() const { return getSignedValue(); }
+    uint32_t getUnsignedValue() const { return value_; }
+    int32_t getSignedValue() const { return static_cast<int32_t>(value_); }
 
     bool isZero() const { return value_ == 0; }
     bool isOne() const { return value_ == 1; }
     bool isTrue() const { return value_ != 0; }
     bool isFalse() const { return value_ == 0; }
-    bool isNegative() const { return static_cast<int64_t>(value_) < 0; }
+    bool isNegative() const { return static_cast<int32_t>(value_) < 0; }
 
     std::string toString() const override { return std::to_string(value_); }
 

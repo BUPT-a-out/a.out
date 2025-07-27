@@ -67,7 +67,15 @@ class FrameIndexElimination {
     int calculateMaxCallArgSize();
 
     // 收集需要保存的寄存器列表
-    std::vector<int> collectSavedRegisters();
+    std::vector<int> collectSavedIntegerRegisters();
+    std::vector<int> collectSavedFloatRegisters();
+
+    // 处理大偏移量的辅助函数
+    bool isValidImmediateOffset(int64_t offset) const;
+    void generateAddWithLargeOffset(
+        BasicBlock* bb, std::list<std::unique_ptr<Instruction>>::iterator& it,
+        int destRegNum, bool destIsVirtual, int baseRegNum, bool baseIsVirtual,
+        int64_t offset);
 };
 
 }  // namespace riscv64
