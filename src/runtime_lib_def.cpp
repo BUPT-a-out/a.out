@@ -9,9 +9,7 @@
 #include "IR/Module.h"
 #include "IR/Type.h"
 
-extern "C" {
 #include "sy_parser/symbol_table.h"
-}
 
 extern std::unordered_map<int, midend::Function*> func_tab;
 

@@ -21,7 +21,6 @@
 #include "IR/Module.h"
 #include "IR/Type.h"
 
-extern "C" {
 #include "sy_parser/AST.h"
 #include "sy_parser/symbol_table.h"
 #include "sy_parser/y.tab.h"
@@ -29,7 +28,6 @@ extern "C" {
 extern int yyparse(void);
 extern FILE* yyin;
 extern ASTNodePtr root;
-}
 
 #include "runtime_lib_def.h"
 
