@@ -24,8 +24,8 @@ struct LivenessInfo {
 struct InterferenceNode {
     unsigned regNum;
     std::unordered_set<unsigned> neighbors;  // 邻接节点
-    int color = -1;                          // 分配的颜色（物理寄存器）
-    bool isPrecolored = false;               // 是否已经预着色（物理寄存器）
+    int color = -1;             // 分配的颜色（物理寄存器）
+    bool isPrecolored = false;  // 是否已经预着色（物理寄存器）
 
     unsigned coalesceParent;  // 合并的代表元
 
@@ -43,9 +43,6 @@ struct CoalesceInfo {
 // 图着色寄存器分配器
 class RegAllocChaitin {
    private:
-    static const int NUM_COLORS = 32;  // RISC-V有32个通用寄存器
-
-    // TODO: do stuff
     int assigningFloat = false;
 
     // 可用于分配的寄存器 (排除保留寄存器)
@@ -62,8 +59,6 @@ class RegAllocChaitin {
         physicalConstraints;
     void addPhysicalConstraint(unsigned virtualReg, unsigned physicalReg);
 
-    // 强约束：必须分配到指定的物理寄存器
-    std::unordered_map<unsigned, unsigned> strongConstraints;
     // 保留的物理寄存器：不能分配给任何虚拟寄存器
     std::unordered_set<unsigned> reservedPhysicalRegs;
 
@@ -84,14 +79,13 @@ class RegAllocChaitin {
 
    public:
     explicit RegAllocChaitin(Function* func, bool assigningFloat = false)
-        : assigningFloat(assigningFloat),
-          function(func) {}
+        : assigningFloat(assigningFloat), function(func) {}
 
     // 主要的寄存器分配接口
     void run();
-    void allocateRegisters();
 
    private:
+    void allocateRegisters();
     // 活跃性分析
     void computeLiveness();
     void computeDefUse(BasicBlock* bb, LivenessInfo& info);
@@ -109,30 +103,6 @@ class RegAllocChaitin {
     void handleSpills();
     std::vector<unsigned> selectSpillCandidates();
     void insertSpillCode(unsigned reg);
-    void handleIntegerLoadStoreSpill(Instruction* inst, unsigned spilledReg,
-                                     int frameIndex, BasicBlock::iterator& it,
-                                     BasicBlock* bb);
-
-    void insertIntegerLoadStoreReload(Instruction* inst, unsigned spilledReg,
-                                      int frameIndex, BasicBlock::iterator& it,
-                                      BasicBlock* bb);
-    void insertIntegerLoadStoreSpill(Instruction* inst, unsigned spilledReg,
-                                     int frameIndex, BasicBlock::iterator& it,
-                                     BasicBlock* bb);
-    void updateLoadStoreOperands(Instruction* inst, unsigned oldReg,
-                                 unsigned addrTempReg, unsigned dataTempReg);
-    void updateLoadStoreOperands(Instruction* inst, unsigned oldReg,
-                                 unsigned addrTempReg);
-
-    void handleFloatLoadStoreSpill(Instruction* inst, unsigned spilledReg,
-                                   int frameIndex, BasicBlock::iterator& it,
-                                   BasicBlock* bb);
-    void insertFloatLoadSpill(Instruction* inst, unsigned spilledReg,
-                              int frameIndex, BasicBlock::iterator& it,
-                              BasicBlock* bb);
-    void insertFloatStoreReload(Instruction* inst, unsigned spilledReg,
-                                int frameIndex, BasicBlock::iterator& it,
-                                BasicBlock* bb);
 
     // 重写指令中的寄存器
     void rewriteInstructions();
@@ -140,7 +110,7 @@ class RegAllocChaitin {
     void rewriteOperand(MachineOperand* operand);
     unsigned getFinalCoalescedReg(unsigned reg);
     void updateRegisterInInstruction(Instruction* inst, unsigned oldReg,
-                                     unsigned newReg);
+                                     unsigned newReg, bool isFloat);
 
     // 寄存器合并方法
     void performCoalescing();
@@ -179,11 +149,6 @@ class RegAllocChaitin {
     void setCallSiteConstraints();
     void setPreCallConstraints(BasicBlock* bb, Instruction* callInst);
     void setPostCallConstraints(BasicBlock* bb, Instruction* callInst);
-
-    void addStrongPhysicalConstraint(unsigned virtualReg,
-                                     unsigned physicalReg) {
-        strongConstraints[virtualReg] = physicalReg;
-    }
 
     void addReservedPhysicalReg(unsigned physicalReg) {
         reservedPhysicalRegs.insert(physicalReg);

@@ -7,10 +7,10 @@
 namespace riscv64::ABI {
 
 // 根据ABI名称获取寄存器编号
-    unsigned getRegNumFromABIName(const std::string& name, bool isFloat = false);
+    unsigned getRegNumFromABIName(const std::string& name);
     
     // 根据寄存器编号获取ABI名称
-    std::string getABINameFromRegNum(unsigned num, bool isFloat = false);
+    std::string getABINameFromRegNum(unsigned num);
     
     // 判断是否为调用者保存寄存器 (Caller-saved/Temporary registers)
     bool isCallerSaved(unsigned physreg, bool isFloat);
