@@ -694,8 +694,9 @@ std::unique_ptr<MachineOperand> Visitor::visitCastInst(
                 }
             }
 
-            throw std::runtime_error("Unsupported trunc cast type: " +
-                                     dest_type->toString());
+            throw std::runtime_error(
+                "Unsupported trunc cast type: " + dest_type->toString() +
+                " -> " + src_type->toString());
         } break;
 
         default:
@@ -890,6 +891,20 @@ std::unique_ptr<MachineOperand> Visitor::visitGEPInst(
 
 std::unique_ptr<MachineOperand> Visitor::visitCallInst(
     const midend::Instruction* inst, BasicBlock* parent_bb) {
+    // 计算参数的实际大小（根据RISC-V64，i32和f32都是4字节）
+    auto getArgSize = [](const midend::Type* type) -> size_t {
+        if (type->isIntegerType()) {
+            // i32类型
+            return 4;
+        } else if (type->isFloatType()) {
+            // f32类型
+            return 4;
+        } else if (type->isPointerType()) {
+            // 指针类型在RISC-V64上是8字节，但根据用户要求只支持i32和f32
+            return 8;  // 保持现有行为，避免破坏指针处理
+        }
+        return 4;  // 默认4字节
+    };
     if (inst->getOpcode() != midend::Opcode::Call) {
         throw std::runtime_error("Not a call instruction: " + inst->toString());
     }
@@ -913,9 +928,25 @@ std::unique_ptr<MachineOperand> Visitor::visitCallInst(
     std::vector<std::pair<size_t, bool>>
         stack_args;  // 记录需要通过栈传递的参数 (索引, 是否浮点)
 
-    // 使用标准RISC-V ABI：一次性分配栈空间，按正序放置参数
-    size_t stack_args_count = (num_args > 8) ? (num_args - 8) : 0;
-    size_t stack_space = stack_args_count * 8;  // 每个栈参数8字节对齐
+    // 计算实际需要的栈空间大小，根据参数类型
+    size_t stack_space = 0;
+    for (size_t i = 8; i < num_args; ++i) {
+        auto* arg = called_func->getArg(i);
+        size_t arg_size = getArgSize(arg->getType());
+        // RISC-V栈参数需要8字节对齐
+        stack_space += (arg_size + 7) & ~7;  // 向上对齐到8字节边界
+    }
+
+    // 预计算栈参数的偏移
+    std::vector<int64_t> stack_arg_offsets;
+    int64_t current_offset = 0;
+    for (size_t i = 8; i < num_args; ++i) {
+        auto* arg = called_func->getArg(i);
+        size_t arg_size = getArgSize(arg->getType());
+        stack_arg_offsets.push_back(current_offset);
+        // RISC-V栈参数需要8字节对齐
+        current_offset += (arg_size + 7) & ~7;
+    }
 
     // 一次性分配栈空间
     if (stack_space > 0) {
@@ -994,8 +1025,8 @@ std::unique_ptr<MachineOperand> Visitor::visitCallInst(
                 source_reg = immToReg(std::move(source_value), parent_bb);
             }
 
-            // 计算栈偏移：第一个栈参数在偏移0，第二个在偏移8，以此类推
-            int64_t stack_offset = (arg_i - 8) * 8;
+            // 使用预计算的栈偏移
+            int64_t stack_offset = stack_arg_offsets[arg_i - 8];
 
             // 根据参数类型选择存储指令
             Opcode store_opcode;
@@ -1027,15 +1058,15 @@ std::unique_ptr<MachineOperand> Visitor::visitCallInst(
         int64_t positive_space = static_cast<int64_t>(stack_space);
         if (isValidImmediateOffset(positive_space)) {
             // 栈空间在立即数范围内，直接使用 addi
-        auto stack_restore_inst =
-            std::make_unique<Instruction>(Opcode::ADDI, parent_bb);
+            auto stack_restore_inst =
+                std::make_unique<Instruction>(Opcode::ADDI, parent_bb);
             stack_restore_inst->addOperand(
                 std::make_unique<RegisterOperand>("sp"));
             stack_restore_inst->addOperand(
                 std::make_unique<RegisterOperand>("sp"));
             stack_restore_inst->addOperand(
                 std::make_unique<ImmediateOperand>(positive_space));
-        parent_bb->addInstruction(std::move(stack_restore_inst));
+            parent_bb->addInstruction(std::move(stack_restore_inst));
         } else {
             // 栈空间超出立即数范围，使用 li + add
             auto li_inst = std::make_unique<Instruction>(Opcode::LI, parent_bb);
@@ -1623,39 +1654,23 @@ void Visitor::visitStoreInst(const midend::Instruction* inst,
               << ", dest is int: " << is_int_dest
               << ", will use float reg: " << should_use_float_reg << std::endl;
 
-    // 特殊处理：如果目标是整数但值是浮点，寻找最近的fcvt.w.s指令结果
+    // 根据值的实际类型选择合适的寄存器类型
     std::unique_ptr<MachineOperand> value_operand;
-    if (is_int_dest && value_to_store->getType()->isFloatType()) {
-        // 查找最近的fcvt.w.s指令，使用其整数结果
-        std::unique_ptr<RegisterOperand> conversion_result;
-
-        for (auto it = parent_bb->rbegin(); it != parent_bb->rend(); ++it) {
-            if ((*it)->getOpcode() == Opcode::FCVT_W_S) {
-                if (!(*it)->getOperands().empty()) {
-                    auto* target_operand = dynamic_cast<RegisterOperand*>(
-                        (*it)->getOperands()[0].get());
-                    if (target_operand) {
-                        conversion_result = std::make_unique<RegisterOperand>(
-                            target_operand->getRegNum(),
-                            target_operand->isVirtual(), RegisterType::Integer);
-                        std::cout << "DEBUG: Found fcvt.w.s result, using "
-                                     "integer register"
-                                  << std::endl;
-                        break;
-                    }
-                }
-            }
-        }
-
-        value_operand = conversion_result
-                            ? std::move(conversion_result)
-                            : immToReg(std::move(raw_value_operand), parent_bb);
+    if (should_use_float_reg) {
+        value_operand = ensureFloatReg(std::move(raw_value_operand), parent_bb);
     } else {
-        value_operand =
-            should_use_float_reg
-                ? ensureFloatReg(std::move(raw_value_operand), parent_bb)
-                : immToReg(std::move(raw_value_operand), parent_bb);
+        value_operand = immToReg(std::move(raw_value_operand), parent_bb);
     }
+
+    // 根据value_operand的实际寄存器类型决定存储指令类型
+    bool is_float_store = false;
+    if (auto* reg_operand =
+            dynamic_cast<RegisterOperand*>(value_operand.get())) {
+        is_float_store = reg_operand->isFloatRegister();
+    }
+    std::cout << "DEBUG: Store analysis - value type: "
+              << store_inst->getValueOperand()->getType()->toString()
+              << ", actual register is float: " << is_float_store << std::endl;
 
     // 处理指针操作数 - 可能是 alloca 指令、GEP 指令或全局变量
     if (auto* alloca_inst =
@@ -1715,14 +1730,12 @@ void Visitor::visitStoreInst(const midend::Instruction* inst,
                 "GEP instruction should return a register operand");
         }
 
-        // 根据存储值的实际类型选择存储指令（与前面的类型检查保持一致）
-        bool is_float_store = should_use_float_reg;
-        std::cout << "DEBUG: Store to GEP - is_float: " << is_float_store
-                  << ", value type: "
+        // 根据value_operand的实际寄存器类型选择存储指令
+        Opcode store_opcode = is_float_store ? Opcode::FSW : Opcode::SW;
+        std::cout << "DEBUG: Store to GEP - using float store: "
+                  << is_float_store << ", value type: "
                   << store_inst->getValueOperand()->getType()->toString()
                   << std::endl;
-
-        Opcode store_opcode = is_float_store ? Opcode::FSW : Opcode::SW;
         std::cout << "DEBUG: Selected store opcode for GEP: "
                   << (store_opcode == Opcode::SW
                           ? "SW"
@@ -1751,15 +1764,12 @@ void Visitor::visitStoreInst(const midend::Instruction* inst,
             global_var->getName()));  // global symbol
         parent_bb->addInstruction(std::move(global_addr_inst));
 
-        // 根据原始IR中存储值的类型选择存储指令
-        bool is_float_store =
-            store_inst->getValueOperand()->getType()->isFloatType();
-        std::cout << "DEBUG: Store to Global - is_float: " << is_float_store
-                  << ", value type: "
+        // 根据value_operand的实际寄存器类型选择存储指令
+        Opcode store_opcode = is_float_store ? Opcode::FSW : Opcode::SW;
+        std::cout << "DEBUG: Store to Global - using float store: "
+                  << is_float_store << ", value type: "
                   << store_inst->getValueOperand()->getType()->toString()
                   << std::endl;
-
-        Opcode store_opcode = is_float_store ? Opcode::FSW : Opcode::SW;
         std::cout << "DEBUG: Selected store opcode for Global: "
                   << (store_opcode == Opcode::SW
                           ? "SW"
@@ -2146,7 +2156,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
                     // 使用 addi 指令
                     new_reg = codeGen_->allocateReg();
                     auto instruction =
-                        std::make_unique<Instruction>(Opcode::ADDI, parent_bb);
+                        std::make_unique<Instruction>(Opcode::ADDIW, parent_bb);
 
                     auto* imm_operand = dynamic_cast<ImmediateOperand*>(
                         lhs->getType() == OperandType::Immediate ? lhs.get()
@@ -2168,7 +2178,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
                     // 使用 add 指令
                     new_reg = codeGen_->allocateReg();
                     auto instruction =
-                        std::make_unique<Instruction>(Opcode::ADD, parent_bb);
+                        std::make_unique<Instruction>(Opcode::ADDW, parent_bb);
                     instruction->addOperand(std::make_unique<RegisterOperand>(
                         new_reg->getRegNum(), new_reg->isVirtual()));  // rd
                     instruction->addOperand(std::move(lhs));           // rs1
@@ -2215,7 +2225,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
                     auto* rhs_imm = dynamic_cast<ImmediateOperand*>(rhs.get());
                     new_reg = codeGen_->allocateReg();
                     auto instruction =
-                        std::make_unique<Instruction>(Opcode::ADDI, parent_bb);
+                        std::make_unique<Instruction>(Opcode::ADDIW, parent_bb);
                     instruction->addOperand(std::make_unique<RegisterOperand>(
                         new_reg->getRegNum(), new_reg->isVirtual()));  // rd
                     instruction->addOperand(std::move(lhs));           // rs1
@@ -2229,7 +2239,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
 
                     new_reg = codeGen_->allocateReg();
                     auto instruction =
-                        std::make_unique<Instruction>(Opcode::SUB, parent_bb);
+                        std::make_unique<Instruction>(Opcode::SUBW, parent_bb);
                     instruction->addOperand(std::make_unique<RegisterOperand>(
                         new_reg->getRegNum(), new_reg->isVirtual()));  // rd
                     instruction->addOperand(std::move(lhs_reg));       // rs1
@@ -2262,7 +2272,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
 
             new_reg = codeGen_->allocateReg();
             auto instruction =
-                std::make_unique<Instruction>(Opcode::MUL, parent_bb);
+                std::make_unique<Instruction>(Opcode::MULW, parent_bb);
             instruction->addOperand(std::make_unique<RegisterOperand>(
                 new_reg->getRegNum(), new_reg->isVirtual()));  // rd
             instruction->addOperand(std::move(lhs_reg));       // rs1
@@ -2296,7 +2306,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
 
             new_reg = codeGen_->allocateReg();
             auto instruction =
-                std::make_unique<Instruction>(Opcode::DIV, parent_bb);
+                std::make_unique<Instruction>(Opcode::DIVW, parent_bb);
             instruction->addOperand(std::make_unique<RegisterOperand>(
                 new_reg->getRegNum(), new_reg->isVirtual()));  // rd
             instruction->addOperand(std::move(lhs_reg));       // rs1
@@ -2325,7 +2335,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
 
             new_reg = codeGen_->allocateReg();
             auto instruction =
-                std::make_unique<Instruction>(Opcode::REM, parent_bb);
+                std::make_unique<Instruction>(Opcode::REMW, parent_bb);
             instruction->addOperand(std::make_unique<RegisterOperand>(
                 new_reg->getRegNum(), new_reg->isVirtual()));  // rd
             instruction->addOperand(std::move(lhs_reg));       // rs1
@@ -2500,7 +2510,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
                 auto* rhs_imm = dynamic_cast<ImmediateOperand*>(rhs.get());
                 new_reg = codeGen_->allocateReg();
                 auto instruction =
-                    std::make_unique<Instruction>(Opcode::SLLI, parent_bb);
+                    std::make_unique<Instruction>(Opcode::SLLIW, parent_bb);
                 instruction->addOperand(std::make_unique<RegisterOperand>(
                     new_reg->getRegNum(), new_reg->isVirtual()));  // rd
                 instruction->addOperand(std::move(lhs));           // rs1
@@ -2513,7 +2523,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
 
                 new_reg = codeGen_->allocateReg();
                 auto instruction =
-                    std::make_unique<Instruction>(Opcode::SLL, parent_bb);
+                    std::make_unique<Instruction>(Opcode::SLLW, parent_bb);
                 instruction->addOperand(std::make_unique<RegisterOperand>(
                     new_reg->getRegNum(), new_reg->isVirtual()));  // rd
                 instruction->addOperand(std::move(lhs_reg));       // rs1
@@ -2540,7 +2550,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
                 auto* rhs_imm = dynamic_cast<ImmediateOperand*>(rhs.get());
                 new_reg = codeGen_->allocateReg();
                 auto instruction =
-                    std::make_unique<Instruction>(Opcode::SRAI, parent_bb);
+                    std::make_unique<Instruction>(Opcode::SRAIW, parent_bb);
                 instruction->addOperand(std::make_unique<RegisterOperand>(
                     new_reg->getRegNum(), new_reg->isVirtual()));  // rd
                 instruction->addOperand(std::move(lhs));           // rs1
@@ -2554,7 +2564,7 @@ std::unique_ptr<MachineOperand> Visitor::visitBinaryOp(
                 new_reg = codeGen_->allocateReg();
                 // 使用算术右移（保持符号位）
                 auto instruction =
-                    std::make_unique<Instruction>(Opcode::SRA, parent_bb);
+                    std::make_unique<Instruction>(Opcode::SRAW, parent_bb);
                 instruction->addOperand(std::make_unique<RegisterOperand>(
                     new_reg->getRegNum(), new_reg->isVirtual()));  // rd
                 instruction->addOperand(std::move(lhs_reg));       // rs1
@@ -3639,6 +3649,21 @@ std::optional<RegisterOperand*> Visitor::findRegForValue(
 
 std::unique_ptr<MachineOperand> Visitor::funcArgToReg(
     const midend::Argument* argument, BasicBlock* parent_bb) {
+    // 计算参数的实际大小（根据RISC-V64，i32和f32都是4字节）
+    auto getArgSize = [](const midend::Type* type) -> size_t {
+        if (type->isIntegerType()) {
+            // i32类型
+            return 4;
+        } else if (type->isFloatType()) {
+            // f32类型
+            return 4;
+        } else if (type->isPointerType()) {
+            // 指针类型在RISC-V64上是8字节，但根据用户要求只支持i32和f32
+            return 8;  // 保持现有行为，避免破坏指针处理
+        }
+        return 4;  // 默认4字节
+    };
+
     // 获取函数参数对应的物理寄存器或者栈帧
     // 根据RISC-V ABI：前8个参数位置使用寄存器，其余使用栈
 
@@ -3697,24 +3722,28 @@ std::unique_ptr<MachineOperand> Visitor::funcArgToReg(
     // 第arg_position个栈参数位于：s0 + 8 + (total_stack_args - (arg_position -
     // 8)) * 8
 
-    // 计算总的栈参数数量（仅包括当前函数的栈参数）
-    size_t total_args = 0;
+    // 计算栈参数的累积偏移（与调用端逻辑保持一致）
+    int64_t arg_offset = 0;
+
+    // 计算当前栈参数之前的所有栈参数的累积大小
     for (auto arg_iter = function->arg_begin(); arg_iter != function->arg_end();
          ++arg_iter) {
-        total_args++;
+        const auto* arg = arg_iter->get();
+        int arg_pos = std::distance(function->arg_begin(), arg_iter);
+
+        if (arg_pos < 8) {
+            continue;  // 跳过寄存器参数
+        }
+
+        if (arg == argument) {
+            break;  // 找到当前参数，停止累积
+        }
+
+        // 计算参数大小并累积偏移
+        size_t arg_size = getArgSize(arg->getType());
+        // RISC-V栈参数需要8字节对齐
+        arg_offset += (arg_size + 7) & ~7;
     }
-
-    size_t total_stack_args = (total_args > 8) ? (total_args - 8) : 0;
-    size_t stack_arg_index =
-        current_arg_position - 8;  // 在栈参数中的索引（0-based）
-
-    // 栈参数位置：调用方分配的栈空间在被调用方栈帧上方
-    // 被调用方栈帧布局：
-    // 高地址: 栈参数区域 <- s0+0开始
-    // s0: 栈帧顶部(原sp位置，call指令推入返回地址后)
-    // 低地址: 被调用函数栈帧
-    int64_t base_offset = 0;  // 第一个栈参数(第九个参数)在s0+0
-    int64_t arg_offset = base_offset + stack_arg_index * 8;
 
     // 根据参数类型分配正确的寄存器类型
     std::unique_ptr<RegisterOperand> arg_reg;
