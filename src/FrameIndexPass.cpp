@@ -347,29 +347,11 @@ void FrameIndexPass::expandFrameAddressInstruction(
               << offset << std::endl;
 
     // 创建替换指令: addi destReg, s0, offset
-    std::unique_ptr<Instruction> newInst;
-    if (isValidImmediateOffset(offset)) {
-        auto newInst = std::make_unique<Instruction>(Opcode::ADDI);
-        newInst->addOperand(std::make_unique<RegisterOperand>(
-            destReg->getRegNum(), destReg->isVirtual()));
-        newInst->addOperand(
-            std::make_unique<RegisterOperand>(8, false));  // s0/fp
-        newInst->addOperand(std::make_unique<ImmediateOperand>(offset));
-    } else {
-        // 立即数过大，先加载到寄存器
-        auto liInst = std::make_unique<Instruction>(Opcode::LI);
-        liInst->addOperand(std::make_unique<RegisterOperand>(5, false));  // t0
-        liInst->addOperand(std::make_unique<ImmediateOperand>(offset));
-        newInst = std::move(liInst);
-
-        auto addInst = std::make_unique<Instruction>(Opcode::ADD);
-        addInst->addOperand(std::make_unique<RegisterOperand>(
-            destReg->getRegNum(), destReg->isVirtual()));
-        addInst->addOperand(
-            std::make_unique<RegisterOperand>(8, false));  // s0/fp
-        addInst->addOperand(std::make_unique<RegisterOperand>(5, false));  // t0
-        newInst = std::move(addInst);
-    }
+    auto newInst = std::make_unique<Instruction>(Opcode::ADDI);
+    newInst->addOperand(std::make_unique<RegisterOperand>(
+        destReg->getRegNum(), destReg->isVirtual()));
+    newInst->addOperand(std::make_unique<RegisterOperand>(8, false));  // s0/fp
+    newInst->addOperand(std::make_unique<ImmediateOperand>(offset));
 
     // 替换指令
     it = bb->insert(it, std::move(newInst));
