@@ -630,7 +630,7 @@ void ReverseIDFCalculator::calculate(BBVector& IDFBlocks) {
     auto cmp = [](const DomTreeNodePair& a, const DomTreeNodePair& b) {
         // Compare by level first, then by DFS number
         if (a.second.first != b.second.first) {
-            return a.second.first > b.second.first;
+            return a.second.first < b.second.first;
         }
         return a.second.second > b.second.second;
     };
@@ -704,10 +704,14 @@ void ReverseIDFCalculator::calculate(BBVector& IDFBlocks) {
                 DoWork(Succ);
             }
 
+            std::cout << "DEBUG: Processed block " << Node->getName()
+                      << " with level " << RootLevel << "\n";
             // Process post-dominator tree children
-            for (BasicBlock* Succ : getPostDomSuccessors(Node)) {
-                if (VisitedWorklist.insert(Succ).second) {
-                    Worklist.push_back(Succ);
+            for (auto& Succ :
+                 PDT_.getDominatorTree()->getNode(Node)->children) {
+                auto SuccNode = Succ.get();
+                if (VisitedWorklist.insert(SuccNode->bb).second) {
+                    Worklist.push_back(SuccNode->bb);
                 }
             }
         }
