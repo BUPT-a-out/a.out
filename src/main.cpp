@@ -2,18 +2,12 @@
 
 #include <cstdio>
 #include <fstream>
-#include <getopt.h>
-
-#include <cstdio>
-#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <optional>
-#include <string>
-#include <string_view>
 
+#include "IR/IRPrinter.h"
 #include "Pass/Analysis/CallGraph.h"
 #include "Pass/Pass.h"
 #include "Pass/Transform/ADCEPass.h"
