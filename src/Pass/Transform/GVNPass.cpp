@@ -340,6 +340,7 @@ bool GVNPass::eliminatePHIRedundancy(PHINode* PHI) {
 
     for (const auto& pair : incomingPairs) {
         expr.operands.push_back(getValueNumber(pair.second));
+        expr.operands.push_back(reinterpret_cast<uintptr_t>(pair.first));
     }
 
     return eliminateRedundancy(PHI, expr);
@@ -368,6 +369,12 @@ bool GVNPass::eliminateLoadRedundancy(Instruction* Load) {
     // Look for available loads in current and dominating blocks
     Value* availLoad = findAvailableLoad(LI, LI->getParent());
     if (availLoad && availLoad != LI) {
+        if (auto* availInst = dyn_cast<LoadInst>(availLoad)) {
+            if (LI->getPointerOperand() != availInst->getPointerOperand()) {
+                return false;
+            }
+        }
+
         std::cout << "GVN: Eliminated redundant load: " << LI->getName()
                   << " with " << availLoad->getName() << std::endl;
         replaceAndErase(LI, availLoad);
