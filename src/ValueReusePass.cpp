@@ -23,8 +23,145 @@ bool ValueReusePass::runOnFunction(
 
     std::cout << "ValueReusePass: Analyzing function "
               << riscv_function->getName()
-              << " with advanced dominator tree-based optimization"
-              << std::endl;
+              << " with LI+LA optimization for debugging" << std::endl;
+
+    bool changed = false;
+    int optimizationCount = 0;
+
+    // Simple optimization: handle immediate values (LI) and addresses (LA)
+    // within the same basic block, careful about register lifetime
+    for (auto& basic_block : *riscv_function) {
+        std::unordered_map<int64_t, RegisterOperand*> localImmediateMap;
+        std::unordered_map<std::string, RegisterOperand*> localAddressMap;
+        std::unordered_set<std::string>
+            invalidatedRegs;  // Track registers that get overwritten
+
+        for (auto it = basic_block->begin(); it != basic_block->end(); ++it) {
+            auto& instruction = *it;
+
+            // Track register invalidation - if this instruction writes to a
+            // register, remove all value mappings using that register
+            if (!instruction->getOperands().empty()) {
+                auto* destReg = dynamic_cast<RegisterOperand*>(
+                    instruction->getOperands()[0].get());
+                if (destReg != nullptr) {
+                    unsigned destRegNum = destReg->getRegNum();
+
+                    // Remove this register from all mappings
+                    for (auto mapIt = localImmediateMap.begin();
+                         mapIt != localImmediateMap.end();) {
+                        if (mapIt->second->getRegNum() == destRegNum) {
+                            mapIt = localImmediateMap.erase(mapIt);
+                        } else {
+                            ++mapIt;
+                        }
+                    }
+                    for (auto mapIt = localAddressMap.begin();
+                         mapIt != localAddressMap.end();) {
+                        if (mapIt->second->getRegNum() == destRegNum) {
+                            mapIt = localAddressMap.erase(mapIt);
+                        } else {
+                            ++mapIt;
+                        }
+                    }
+                }
+            }
+
+            if (instruction->getOpcode() == Opcode::LI) {
+                // Handle LI instruction
+                if (instruction->getOperands().size() >= 2) {
+                    auto* destReg = dynamic_cast<RegisterOperand*>(
+                        instruction->getOperands()[0].get());
+                    auto* immediateOp = dynamic_cast<ImmediateOperand*>(
+                        instruction->getOperands()[1].get());
+
+                    if (destReg != nullptr && immediateOp != nullptr) {
+                        int64_t immediateValue = immediateOp->getValue();
+
+                        // Check if we already have this immediate value in a
+                        // register
+                        if (localImmediateMap.find(immediateValue) !=
+                            localImmediateMap.end()) {
+                            RegisterOperand* existingReg =
+                                localImmediateMap[immediateValue];
+
+                            // Replace LI with MV instruction
+                            auto mvInstruction =
+                                std::make_unique<Instruction>(Opcode::MV);
+                            mvInstruction->addOperand(
+                                std::make_unique<RegisterOperand>(*destReg));
+                            mvInstruction->addOperand(
+                                std::make_unique<RegisterOperand>(
+                                    *existingReg));
+
+                            // Replace the instruction
+                            it = basic_block->erase(it);
+                            it = basic_block->insert(it,
+                                                     std::move(mvInstruction));
+
+                            optimizationCount++;
+                            changed = true;
+
+                            std::cout << "Replaced LI " << immediateValue
+                                      << " with MV (reusing register)"
+                                      << std::endl;
+                        } else {
+                            // Record this immediate value and its register
+                            localImmediateMap[immediateValue] = destReg;
+                        }
+                    }
+                }
+            } else if (instruction->getOpcode() == Opcode::LA) {
+                // Handle LA instruction - similar to LI but for addresses
+                if (instruction->getOperands().size() >= 2) {
+                    auto* destReg = dynamic_cast<RegisterOperand*>(
+                        instruction->getOperands()[0].get());
+                    auto* labelOp = dynamic_cast<LabelOperand*>(
+                        instruction->getOperands()[1].get());
+
+                    if (destReg != nullptr && labelOp != nullptr) {
+                        std::string labelName = labelOp->getLabelName();
+
+                        // Check if we already have this address in a register
+                        if (localAddressMap.find(labelName) !=
+                            localAddressMap.end()) {
+                            RegisterOperand* existingReg =
+                                localAddressMap[labelName];
+
+                            // Replace LA with MV instruction
+                            auto mvInstruction =
+                                std::make_unique<Instruction>(Opcode::MV);
+                            mvInstruction->addOperand(
+                                std::make_unique<RegisterOperand>(*destReg));
+                            mvInstruction->addOperand(
+                                std::make_unique<RegisterOperand>(
+                                    *existingReg));
+
+                            // Replace the instruction
+                            it = basic_block->erase(it);
+                            it = basic_block->insert(it,
+                                                     std::move(mvInstruction));
+
+                            optimizationCount++;
+                            changed = true;
+
+                            std::cout << "Replaced LA " << labelName
+                                      << " with MV (reusing register)"
+                                      << std::endl;
+                        } else {
+                            // Record this address and its register
+                            localAddressMap[labelName] = destReg;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << "ValueReusePass applied " << optimizationCount
+              << " optimizations (LI+LA to MV)" << std::endl;
+
+    return changed;
 
     // Get or compute dominance information for the midend function
     const midend::DominanceInfo* dominanceInfo = nullptr;
@@ -125,6 +262,8 @@ bool ValueReusePass::traverseDominatorTree(
         return false;
     }
 
+    std::unordered_map<MachineOperand*, RegisterOperand*> availableValuesMap;
+
     // Cast to the actual DominatorTree::Node type
     using NodeType = midend::DominatorTreeBase<false>::Node;
     const NodeType* node = static_cast<const NodeType*>(node_ptr);
@@ -216,77 +355,267 @@ bool ValueReusePass::processInstruction(
     Instruction* inst, const midend::BasicBlock* midend_bb,
     std::unordered_map<const midend::Value*, RegisterOperand*>& valueMap,
     std::vector<const midend::Value*>& definitionsInThisBlock) {
-    
     Opcode opcode = inst->getOpcode();
-    std::cout << "        Processing instruction: " << inst->toString() << std::endl;
+    std::cout << "        Processing instruction: " << inst->toString()
+              << std::endl;
 
     switch (opcode) {
         case LI: {
-            // 立即数加载指令 - 实现正确的值复用逻辑
+            // 立即数加载指令 - 基于常量值进行复用判断
             const auto& operands = inst->getOperands();
             if (operands.size() >= 2) {
-                auto* dest_reg = dynamic_cast<RegisterOperand*>(operands[0].get());
-                auto* imm_op = dynamic_cast<ImmediateOperand*>(operands[1].get());
-                
+                auto* dest_reg =
+                    dynamic_cast<RegisterOperand*>(operands[0].get());
+                auto* imm_op =
+                    dynamic_cast<ImmediateOperand*>(operands[1].get());
+
                 if (dest_reg != nullptr && imm_op != nullptr) {
                     int64_t value = imm_op->getValue();
-                    std::cout << "          Load immediate: " << value 
-                              << " -> reg" << dest_reg->getRegNum() << std::endl;
+                    std::cout << "          Load immediate: " << value
+                              << " -> reg" << dest_reg->getRegNum()
+                              << std::endl;
                     stats_.loadsAnalyzed++;
-                    
-                    // 关键修复：只在寄存器中查找已有的立即数值，不从栈加载
-                    // 查找是否有相同立即数值的指令已经存在于寄存器中
-                    const midend::Value* correspondingValue = findCorrespondingMidendInstruction(inst, midend_bb);
-                    if (correspondingValue != nullptr) {
-                        // 检查是否已经有寄存器保存了相同的值
-                        auto it = valueMap.find(correspondingValue);
-                        if (it != valueMap.end() && it->second != nullptr) {
-                            RegisterOperand* existing_reg = it->second;
-                            
-                            // 确保现有寄存器仍然有效且不是当前目标寄存器
-                            if (existing_reg->getRegNum() != dest_reg->getRegNum()) {
-                                std::cout << "          OPTIMIZATION: Found existing register " 
-                                          << existing_reg->getRegNum() 
-                                          << " with same immediate value " << value 
-                                          << ", could reuse for reg" << dest_reg->getRegNum() << std::endl;
-                                stats_.optimizationOpportunities++;
-                                // 注意：这里我们只统计机会，不实际修改指令
-                                // 避免生成错误的栈加载指令
-                            }
-                        }
-                        
-                        // 无论是否复用，都记录当前定义
-                        valueMap[correspondingValue] = dest_reg;
-                        definitionsInThisBlock.push_back(correspondingValue);
-                        std::cout << "          Recording immediate " << value 
-                                  << " in reg" << dest_reg->getRegNum() << std::endl;
+
+                    // 为立即数创建一个简单的字符串键
+                    std::string immediateKey = "imm_" + std::to_string(value);
+
+                    // 使用字符串哈希作为虚拟指针
+                    static std::unordered_map<std::string,
+                                              std::unique_ptr<char>>
+                        immediateKeyMap;
+
+                    if (immediateKeyMap.find(immediateKey) ==
+                        immediateKeyMap.end()) {
+                        immediateKeyMap[immediateKey] =
+                            std::make_unique<char>('\0');
                     }
+
+                    // 使用这个作为常量值的标识符
+                    const midend::Value* immediateConstant =
+                        reinterpret_cast<const midend::Value*>(
+                            immediateKeyMap[immediateKey].get());
+
+                    // 检查是否已经有寄存器保存了相同的立即数值
+                    auto valueMapIter = valueMap.find(immediateConstant);
+                    if (valueMapIter != valueMap.end() &&
+                        valueMapIter->second != nullptr) {
+                        RegisterOperand* existing_reg = valueMapIter->second;
+
+                        // 确保现有寄存器仍然有效且不是当前目标寄存器
+                        if (existing_reg->getRegNum() !=
+                            dest_reg->getRegNum()) {
+                            std::cout << "          OPTIMIZATION: Found "
+                                         "existing register "
+                                      << existing_reg->getRegNum()
+                                      << " with same immediate value " << value
+                                      << ", replacing with mv for reg"
+                                      << dest_reg->getRegNum() << std::endl;
+                            stats_.optimizationOpportunities++;
+                            stats_.virtualRegsReused++;
+
+                            // 保存寄存器号在清空操作数之前
+                            unsigned int dest_reg_num = dest_reg->getRegNum();
+                            unsigned int existing_reg_num =
+                                existing_reg->getRegNum();
+
+                            // 实际应用优化：将 LI 指令替换为 MV 指令
+                            inst->setOpcode(MV);
+                            // 清空操作数并重新设置
+                            inst->clearOperands();
+                            // 创建新的寄存器操作数：目标仍然是原寄存器，源是已有的寄存器
+                            auto dest_operand =
+                                std::make_unique<RegisterOperand>(
+                                    dest_reg_num, false, RegisterType::Integer);
+                            auto source_operand =
+                                std::make_unique<RegisterOperand>(
+                                    existing_reg_num, false,
+                                    RegisterType::Integer);
+                            inst->addOperand(std::move(dest_operand));
+                            inst->addOperand(std::move(source_operand));
+
+                            std::cout << "          Applied optimization: MV r"
+                                      << dest_reg_num << ", r"
+                                      << existing_reg_num << std::endl;
+
+                            // 记录当前定义（dest_reg仍然是有效的目标）
+                            valueMap[immediateConstant] = dest_reg;
+                            definitionsInThisBlock.push_back(immediateConstant);
+                            return true;
+                        }
+                    }
+
+                    // 记录当前定义
+                    valueMap[immediateConstant] = dest_reg;
+                    definitionsInThisBlock.push_back(immediateConstant);
+                    std::cout << "          Recording immediate " << value
+                              << " in reg" << dest_reg->getRegNum()
+                              << std::endl;
                 }
             }
             break;
         }
-        
-        case LW:
-        case FLW: {
-            // 内存加载指令
+
+        case LA: {
+            // 地址加载指令 - 跟踪地址计算的复用
             const auto& operands = inst->getOperands();
             if (operands.size() >= 2) {
-                auto* dest_reg = dynamic_cast<RegisterOperand*>(operands[0].get());
+                auto* dest_reg =
+                    dynamic_cast<RegisterOperand*>(operands[0].get());
                 if (dest_reg != nullptr) {
-                    std::cout << "          Memory load -> reg" << dest_reg->getRegNum() << std::endl;
+                    std::cout << "          Load address -> reg"
+                              << dest_reg->getRegNum() << std::endl;
                     stats_.loadsAnalyzed++;
-                    
-                    // 为内存加载建立映射
-                    const midend::Value* correspondingValue = findCorrespondingMidendInstruction(inst, midend_bb);
-                    if (correspondingValue != nullptr) {
-                        valueMap[correspondingValue] = dest_reg;
-                        definitionsInThisBlock.push_back(correspondingValue);
+
+                    // 为地址加载建立映射，使用目标标识符
+                    // 第二个操作数通常是符号或标签
+                    std::string addressTarget = "unknown";
+                    if (operands.size() > 1) {
+                        // 尝试获取目标地址的标识符
+                        if (auto* labelOp = dynamic_cast<LabelOperand*>(
+                                operands[1].get())) {
+                            // 获取标签的名称
+                            addressTarget = "label:" + labelOp->getLabelName();
+                        } else {
+                            // 其他类型的地址操作数
+                            addressTarget = "address_operand";
+                        }
+                    }
+
+                    // 创建地址的规范化标识符，用作valueMap的key
+                    std::string canonicalAddr = "addr:" + addressTarget;
+                    std::cout
+                        << "          Address canonical: " << canonicalAddr
+                        << std::endl;
+
+                    // 创建一个虚拟的midend::Value指针作为地址标识符
+                    static std::unordered_map<std::string,
+                                              std::unique_ptr<char>>
+                        addressKeyMap;
+                    if (addressKeyMap.find(canonicalAddr) ==
+                        addressKeyMap.end()) {
+                        addressKeyMap[canonicalAddr] =
+                            std::make_unique<char>('\0');
+                    }
+                    const midend::Value* addressKey =
+                        reinterpret_cast<const midend::Value*>(
+                            addressKeyMap[canonicalAddr].get());
+
+                    // 查找是否有相同地址已经被加载到寄存器
+                    auto valueMapIter = valueMap.find(addressKey);
+                    if (valueMapIter != valueMap.end() &&
+                        valueMapIter->second != nullptr) {
+                        RegisterOperand* existing_reg = valueMapIter->second;
+                        if (existing_reg->getRegNum() !=
+                            dest_reg->getRegNum()) {
+                            std::cout << "          OPTIMIZATION: Found "
+                                         "existing register "
+                                      << existing_reg->getRegNum()
+                                      << " with same address " << canonicalAddr
+                                      << ", replacing with mv for reg"
+                                      << dest_reg->getRegNum() << std::endl;
+                            stats_.optimizationOpportunities++;
+                            stats_.virtualRegsReused++;
+
+                            // 保存寄存器号在清空操作数之前
+                            unsigned int dest_reg_num = dest_reg->getRegNum();
+                            unsigned int existing_reg_num =
+                                existing_reg->getRegNum();
+
+                            // 实际应用优化：将 LA 指令替换为 MV 指令
+                            inst->setOpcode(MV);
+                            inst->clearOperands();
+                            auto dest_operand =
+                                std::make_unique<RegisterOperand>(
+                                    dest_reg_num, false, RegisterType::Integer);
+                            auto source_operand =
+                                std::make_unique<RegisterOperand>(
+                                    existing_reg_num, false,
+                                    RegisterType::Integer);
+                            inst->addOperand(std::move(dest_operand));
+                            inst->addOperand(std::move(source_operand));
+
+                            std::cout << "          Applied optimization: MV r"
+                                      << dest_reg_num << ", r"
+                                      << existing_reg_num << std::endl;
+
+                            // 记录当前定义 - 使用新创建的dest_operand
+                            // 注意：不要使用原来的dest_reg，因为指令已经被修改
+                            valueMap[addressKey] =
+                                dynamic_cast<RegisterOperand*>(
+                                    inst->getOperands()[0].get());
+                            definitionsInThisBlock.push_back(addressKey);
+                            return true;
+                        }
+                    }
+
+                    // 记录当前地址映射
+                    valueMap[addressKey] = dest_reg;
+                    definitionsInThisBlock.push_back(addressKey);
+                    std::cout << "          Recording address " << canonicalAddr
+                              << " in reg" << dest_reg->getRegNum()
+                              << std::endl;
+                }
+            }
+            break;
+        }
+
+        case LW:
+        case FLW: {
+            // 内存加载指令 - 基于规范化内存地址进行复用判断
+            const auto& operands = inst->getOperands();
+            if (operands.size() >= 2) {
+                auto* dest_reg =
+                    dynamic_cast<RegisterOperand*>(operands[0].get());
+                if (dest_reg != nullptr) {
+                    std::cout << "          Memory load -> reg"
+                              << dest_reg->getRegNum() << std::endl;
+                    stats_.loadsAnalyzed++;
+
+                    // 获取规范化的内存地址标识符
+                    std::string canonicalAddress =
+                        getCanonicalMemoryAddress(inst);
+                    if (!canonicalAddress.empty()) {
+                        // 查找对应的 midend Load 指令
+                        const midend::Value* correspondingLoad =
+                            findCorrespondingLoadInstruction(inst, midend_bb,
+                                                             canonicalAddress);
+                        if (correspondingLoad != nullptr) {
+                            // 检查是否已经有寄存器保存了相同内存位置的值
+                            auto loadMapIter = valueMap.find(correspondingLoad);
+                            if (loadMapIter != valueMap.end() &&
+                                loadMapIter->second != nullptr) {
+                                RegisterOperand* existing_reg =
+                                    loadMapIter->second;
+
+                                if (existing_reg->getRegNum() !=
+                                    dest_reg->getRegNum()) {
+                                    std::cout << "          OPTIMIZATION: "
+                                                 "Found existing register "
+                                              << existing_reg->getRegNum()
+                                              << " with same memory value from "
+                                              << canonicalAddress
+                                              << ", could reuse for reg"
+                                              << dest_reg->getRegNum()
+                                              << std::endl;
+                                    stats_.optimizationOpportunities++;
+                                    stats_.virtualRegsReused++;
+                                    // 这里可以实现实际的加载消除优化
+                                }
+                            }
+
+                            // 记录当前加载
+                            valueMap[correspondingLoad] = dest_reg;
+                            definitionsInThisBlock.push_back(correspondingLoad);
+                            std::cout << "          Recording load from "
+                                      << canonicalAddress << " in reg"
+                                      << dest_reg->getRegNum() << std::endl;
+                        }
                     }
                 }
             }
             break;
         }
-        
+
         case SW:
         case FSW: {
             std::cout << "          Store instruction" << std::endl;
@@ -295,7 +624,7 @@ bool ValueReusePass::processInstruction(
             invalidateMemoryValues(valueMap, definitionsInThisBlock);
             break;
         }
-        
+
         case CALL: {
             std::cout << "          Call instruction" << std::endl;
             stats_.callsProcessed++;
@@ -303,7 +632,7 @@ bool ValueReusePass::processInstruction(
             invalidateMemoryValues(valueMap, definitionsInThisBlock);
             break;
         }
-        
+
         default:
             // 其他指令暂不处理
             break;
@@ -356,6 +685,143 @@ const midend::Value* ValueReusePass::findCorrespondingMidendInstruction(
     return nullptr;
 }
 
+// 专门用于查找对应常量值的方法
+const midend::Value* ValueReusePass::findCorrespondingConstantValue(
+    Instruction* /*inst*/, const midend::BasicBlock* midend_bb, int64_t value) {
+    if (midend_bb == nullptr) {
+        return nullptr;
+    }
+
+    // 在 midend 基本块中查找产生相同常量值的指令
+    for (const auto& midend_inst : *midend_bb) {
+        // 检查是否是常量值
+        if (const auto* constant =
+                dynamic_cast<const midend::Constant*>(midend_inst)) {
+            if (const auto* intConstant =
+                    dynamic_cast<const midend::ConstantInt*>(constant)) {
+                if (intConstant->getValue() == value) {
+                    std::cout << "          Found matching constant " << value
+                              << " in midend IR" << std::endl;
+                    return constant;
+                }
+            }
+        }
+
+        // 也检查产生常量的指令（例如算术运算的结果）
+        // 这里可以扩展更复杂的常量匹配逻辑
+    }
+
+    // 如果没有找到对应的常量，返回nullptr
+    // 在实际实现中，可能需要更复杂的处理
+    return nullptr;
+}
+
+// 专门用于查找对应加载指令的方法
+const midend::Value* ValueReusePass::findCorrespondingLoadInstruction(
+    Instruction* /*inst*/, const midend::BasicBlock* midend_bb,
+    const std::string& canonicalAddress) {
+    if (midend_bb == nullptr || canonicalAddress.empty()) {
+        return nullptr;
+    }
+
+    // 在 midend 基本块中查找对应的 Load 指令
+    for (const auto& midend_inst : *midend_bb) {
+        if (midend_inst->getOpcode() == midend::Opcode::Load) {
+            // 获取 Load 指令的源地址
+            if (midend_inst->getNumOperands() > 0) {
+                const midend::Value* sourceAddr = midend_inst->getOperand(0);
+
+                // 将 midend 地址转换为规范化地址进行比较
+                std::string midendCanonicalAddr =
+                    getMidendCanonicalAddress(sourceAddr);
+                if (midendCanonicalAddr == canonicalAddress) {
+                    std::cout << "          Found matching load from "
+                              << canonicalAddress << " in midend IR"
+                              << std::endl;
+                    return midend_inst;
+                }
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+// 获取 RISC-V 指令的规范化内存地址
+std::string ValueReusePass::getCanonicalMemoryAddress(Instruction* inst) {
+    const auto& operands = inst->getOperands();
+
+    // 对于 LW/FLW 指令，操作数格式通常是: dest_reg, offset(base_reg)
+    if (operands.size() >= 2) {
+        // 第二个操作数应该是内存操作数
+        if (auto* memOp = dynamic_cast<MemoryOperand*>(operands[1].get())) {
+            auto* baseReg = memOp->getBaseReg();
+            auto* offsetOp = memOp->getOffset();
+
+            if (baseReg != nullptr && offsetOp != nullptr) {
+                int64_t offset = offsetOp->getValue();
+
+                // 构造规范化地址字符串
+                std::string canonical = "reg" +
+                                        std::to_string(baseReg->getRegNum()) +
+                                        ":offset" + std::to_string(offset);
+
+                // 如果是栈帧相关的寄存器，使用更具体的标识
+                const int SP_REG_NUM = 2;  // sp 寄存器
+                const int FP_REG_NUM = 8;  // fp 寄存器
+                if (baseReg->getRegNum() == SP_REG_NUM) {
+                    canonical = "stack:offset" + std::to_string(offset);
+                } else if (baseReg->getRegNum() == FP_REG_NUM) {
+                    canonical = "frame:offset" + std::to_string(offset);
+                }
+
+                std::cout << "          Canonical address: " << canonical
+                          << std::endl;
+                return canonical;
+            }
+        }
+    }
+
+    return "";
+}
+
+// 辅助方法：将 midend 地址值转换为规范化地址
+std::string ValueReusePass::getMidendCanonicalAddress(
+    const midend::Value* addr) {
+    if (addr == nullptr) {
+        return "";
+    }
+
+    // 检查是否是全局变量
+    if (const auto* globalVar =
+            dynamic_cast<const midend::GlobalVariable*>(addr)) {
+        return "global:" + globalVar->getName();
+    }
+
+    // 检查是否是 Alloca 指令（栈变量）
+    if (const auto* allocaInst =
+            dynamic_cast<const midend::Instruction*>(addr)) {
+        if (allocaInst->getOpcode() == midend::Opcode::Alloca) {
+            // 使用指令的地址作为唯一标识符（避免reinterpret_cast）
+            static size_t allocaCounter = 0;
+            return "alloca:" + std::to_string(allocaCounter++);
+        }
+    }
+
+    // 检查是否是 GEP 指令 - 简化处理，避免递归
+    if (const auto* gepInst = dynamic_cast<const midend::Instruction*>(addr)) {
+        if (gepInst->getOpcode() == midend::Opcode::GetElementPtr) {
+            // 简化处理：只返回基本的GEP标识
+            static size_t gepCounter = 0;
+            return "gep:" + std::to_string(gepCounter++);
+        }
+    }
+
+    // 默认情况：使用简单的计数器标识符
+    static size_t valueCounter = 0;
+    return "value:" + std::to_string(valueCounter++);
+}
+
 std::unordered_map<const midend::BasicBlock*, BasicBlock*>
 ValueReusePass::createBasicBlockMapping(
     Function* riscv_function, const midend::Function* midend_function) {
@@ -402,19 +868,30 @@ void ValueReusePass::resetState() {
 void ValueReusePass::invalidateMemoryValues(
     std::unordered_map<const midend::Value*, RegisterOperand*>& valueMap,
     std::vector<const midend::Value*>& definitionsInThisBlock) {
-    // For conservativeness, we could invalidate all memory-related values
-    // For simplicity in this implementation, we'll be very conservative
-    // and invalidate everything
+    // Store和Call指令会使内存相关的值失效
+    // 我们需要保守地清除所有可能受影响的值
 
-    std::cout << "        Conservative invalidation of " << valueMap.size()
-              << " tracked values" << std::endl;
+    std::vector<const midend::Value*> toInvalidate;
 
-    // Track what we're invalidating for potential backtracking
+    // 识别需要失效的值（地址加载、内存加载等）
     for (const auto& pair : valueMap) {
-        definitionsInThisBlock.push_back(pair.first);
+        const midend::Value* key = pair.first;
+        // 检查是否是我们创建的特殊键（地址或内存加载）
+        // 由于我们使用了伪造的指针，这里做简单的范围检查
+        if (key != nullptr) {
+            toInvalidate.push_back(key);
+        }
     }
 
-    valueMap.clear();
+    std::cout << "        Conservative invalidation of " << toInvalidate.size()
+              << " tracked values" << std::endl;
+
+    // 移除失效的值，但不要添加到definitionsInThisBlock
+    // 因为这些不是在当前块中定义的新值
+    for (const auto* key : toInvalidate) {
+        valueMap.erase(key);
+    }
+
     stats_.invalidations++;
 }
 

@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "Instructions/MachineOperand.h"
+
 // Forward declarations
 namespace midend {
 class Value;
@@ -75,6 +77,16 @@ class ValueReusePass {
         Instruction* inst, const midend::BasicBlock* midend_bb);
     const midend::Value* findCorrespondingValue(
         Instruction* inst, const midend::BasicBlock* midend_bb);
+
+    // New specialized mapping methods for different instruction types
+    const midend::Value* findCorrespondingConstantValue(
+        Instruction* inst, const midend::BasicBlock* midend_bb, int64_t value);
+    const midend::Value* findCorrespondingLoadInstruction(
+        Instruction* inst, const midend::BasicBlock* midend_bb,
+        const std::string& canonicalAddress);
+    std::string getCanonicalMemoryAddress(Instruction* inst);
+    std::string getMidendCanonicalAddress(const midend::Value* addr);
+
     void invalidateMemoryValues(
         std::unordered_map<const midend::Value*, RegisterOperand*>& valueMap,
         std::vector<const midend::Value*>& definitionsInThisBlock);
@@ -86,6 +98,8 @@ class ValueReusePass {
 
    private:
     PassStatistics stats_;
+
+    std::unordered_map<MachineOperand*, RegisterOperand*> availableValuesMap;
 };
 
 }  // namespace riscv64
