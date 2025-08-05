@@ -334,16 +334,22 @@ ABI实现的主要功能包括：寄存器命名映射（支持ABI名称和数�
 
 ```cpp
 // ABI寄存器映射示例
-static const std::unordered_map<std::string, unsigned> abiNameMap = {
-    // 整数寄存器
-    {"zero", 0}, {"ra", 1}, {"sp", 2}, {"gp", 3}, {"tp", 4},
-    {"t0", 5}, {"t1", 6}, {"t2", 7}, {"s0", 8}, {"s1", 9},
-    {"a0", 10}, {"a1", 11}, {"a2", 12}, {"a3", 13}, {"a4", 14}, {"a5", 15},
-    
-    // 浮点寄存器
-    {"ft0", 32}, {"ft1", 33}, {"ft2", 34}, {"ft3", 35},
-    {"fs0", 40}, {"fs1", 41}, {"fa0", 42}, {"fa1", 43}
-};
+namespace riscv64::ABI {
+    // 根据ABI名称获取寄存器编号
+    unsigned getRegNumFromABIName(const std::string& name);
+    // 根据寄存器编号获取ABI名称
+    std::string getABINameFromRegNum(unsigned num); 
+    // 判断是否为调用者保存寄存器 (Caller-saved/Temporary registers)
+    bool isCallerSaved(unsigned physreg, bool isFloat);
+    // 判断是否为被调用者保存寄存器 (Callee-saved/Saved registers)
+    bool isCalleeSaved(unsigned physreg, bool isFloat);
+    // 判断是否为参数寄存器 (Argument registers)
+    bool isArgumentReg(unsigned physreg, bool isFloat);
+    // 判断是否为返回值寄存器 (Return value registers)
+    bool isReturnReg(unsigned physreg, bool isFloat);
+    bool isReservedReg(unsigned physreg, bool isFloat);
+    std::vector<unsigned> getCallerSavedRegs(bool isFloat);
+}
 ```
 
 #### 函数调用约定实现
@@ -366,25 +372,19 @@ static const std::unordered_map<std::string, unsigned> abiNameMap = {
 
 ### 代码生成和汇编输出
 
-#### 汇编代码生成
-
 汇编代码生成器位于`src/Printer.cpp`文件中，负责将机器指令转换为可读的RISC-V汇编代码。代码生成器支持所有RISC-V指令的文本表示，包括指令名称、操作数和注释的格式化输出。
 
-代码生成器的主要功能包括：指令名称映射（将操作码转换为汇编助记符）、操作数格式化（支持寄存器、立即数、标签和内存地址的文本表示）、注释生成（为复杂指令生成解释性注释）、段管理（支持代码段、数据段和只读数据段的输出）。
-
-#### 优化特性
-
-后端模块实现了多种代码生成优化，包括指令调度优化、分支预测优化和代码大小优化。指令调度优化能够重排指令以减少流水线停顿，分支预测优化能够优化分支指令的布局以提高预测准确性，代码大小优化能够选择更紧凑的指令序列来减少代码体积。
+代码生成器的主要功能包括：指令名称映射（将操作码转换为汇编助记符）、操作数格式化（支持寄存器、立即数、标签和内存地址的文本表示）、段管理（支持代码段、数据段和只读数据段的输出）。
 
 ### 调试和错误处理
 
 #### 调试信息生成
 
-后端模块支持调试信息的生成，包括符号表信息、行号信息和变量位置信息。调试信息能够帮助开发者理解生成的汇编代码与源代码的对应关系，便于程序的调试和优化。
+后端模块支持调试信息的生成，包括优化的具体流程、符号表信息、行号信息和变量位置信息。调试信息能够帮助开发者理解生成的汇编代码与源代码的对应关系，便于程序的调试和优化。
 
 #### 错误检测和报告
 
-后端模块实现了完善的错误检测和报告机制，能够检测寄存器分配失败、栈帧溢出、指令选择错误等问题。错误报告系统能够提供详细的错误信息和修复建议，帮助开发者快速定位和解决问题。
+后端模块实现了错误检测和报告机制，能够检测寄存器分配失败、栈帧溢出、指令选择错误等问题。错误报告系统能够提供详细的错误信息，帮助开发者快速定位和解决问题。
 
 ### 性能优化特性
 
@@ -399,3 +399,7 @@ static const std::unordered_map<std::string, unsigned> abiNameMap = {
 #### 栈帧优化
 
 栈帧管理器实现了多种优化策略，包括栈对象合并、对齐优化和访问模式优化。栈对象合并能够将相邻的小对象合并为大对象以减少栈空间使用，对齐优化能够确保栈对象满足架构对齐要求，访问模式优化能够生成高效的栈访问指令序列。
+
+#### 值重用优化
+
+值重用优化 Pass 实现了多种优化策略，在指令选择不分完成后，通过遍历支配树，消除指令选择阶段重复的立即数加载、内存加载等，将重复的加载转化为拷贝指令，大幅提高生成汇编代码的性能。
