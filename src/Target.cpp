@@ -2,8 +2,12 @@
 
 #include "BasicBlockReordering.h"
 #include "CodeGen.h"
+#include "ConstantFoldingPass.h"
 #include "FrameIndexElimination.h"
 #include "IR/Function.h"
+#include "RAGreedy/LiveIntervals.h"
+#include "RAGreedy/RegAllocGreedy.h"
+#include "RAGreedy/RegisterRewriter.h"
 #include "RAGreedy/SlotIndexes.h"
 #include "RegAllocChaitin.h"
 #include "ValueReusePass.h"
@@ -27,14 +31,16 @@ std::string RISCV64Target::compileToAssembly(
     if (analysisManager != nullptr) {
         valueReusePass(riscv_module, module, analysisManager);
     } else {
-        std::cout << "No AnalysisManager provided for ValueReusePass, skipped. Pass `-O1` param to enable."
+        std::cout << "No AnalysisManager provided for ValueReusePass, skipped. "
+                     "Pass `-O1` param to enable."
                   << std::endl;
     }
 
-    initialFrameIndexPass(riscv_module);  // 第一阶段
+    initialFrameIndexPass(riscv_module);     // 第一阶段
+    constantFoldingPass(riscv_module);       // 第1.6阶段：常量折叠优化
     basicBlockReorderingPass(riscv_module);  // 第1.7阶段：基本块重排优化
 
-    slotIndexWrapperPass(riscv_module);
+    // RAGreedyPass(riscv_module);
 
     registerAllocationPass(riscv_module);     // 第二阶段
     frameIndexEliminationPass(riscv_module);  // 第三阶段
@@ -97,6 +103,25 @@ Module RISCV64Target::instructionSelectionPass(const midend::Module& module) {
     return riscv_module;
 }
 
+Module& RISCV64Target::constantFoldingPass(riscv64::Module& module) {
+    std::cout << "\n=== Phase 1.6: Constant Folding ===" << std::endl;
+
+    for (auto& function : module) {
+        if (function->empty()) continue;
+
+        std::cout << "Processing function: " << function->getName()
+                  << std::endl;
+
+        ConstantFolding pass;
+        pass.runOnFunction(function.get());
+    }
+
+    std::cout << "=== Constant Folding Completed ===" << std::endl;
+    std::cout << module.toString() << std::endl;
+
+    return module;
+}
+
 Module& RISCV64Target::initialFrameIndexPass(riscv64::Module& module) {
     std::cout << "\n=== Phase 1.5: Initial Frame Index Creation ==="
               << std::endl;
@@ -154,16 +179,53 @@ Module& RISCV64Target::basicBlockReorderingPass(riscv64::Module& module) {
     return module;
 }
 
-Module& RISCV64Target::slotIndexWrapperPass(riscv64::Module& module) {
+Module& RISCV64Target::RAGreedyPass(riscv64::Module& module) {
     std::cout << "\n=== Phase 2.0: SlotIndexGeneration ===" << std::endl;
 
-    SlotIndexesWrapperPass wrapper;
+    SlotIndexesWrapperPass wrapper0;
     for (auto& function : module) {
-        wrapper.runOnFunction(function.get());
-        auto& SI = wrapper.getSI();
+        wrapper0.runOnFunction(function.get());
+        auto& SI = wrapper0.getSI();
         SI.print(std::cout);
+
+        auto LISFloat =
+            std::make_unique<LiveIntervals>(function.get(), &SI, true);
+        LISFloat->analyze(*function);
+        LISFloat->print(std::cout);
+
+        auto RAGreedyFloat =
+            RegAllocGreedy(function.get(), LISFloat.get(), true);
+        RAGreedyFloat.run();
+        RAGreedyFloat.print(std::cout);
+
+        auto rewriterFloat =
+            RegisterRewriter(function.get(), RAGreedyFloat.getVRM(), true);
+        rewriterFloat.rewrite();
     }
 
+    std::cout << "Alloc for float" << std::endl;
+    std::cout << module.toString() << std::endl;
+
+    SlotIndexesWrapperPass wrapper1;
+    for (auto& function : module) {
+        wrapper1.runOnFunction(function.get());
+        auto& SI = wrapper1.getSI();
+        SI.print(std::cout);
+
+        auto LISInt = std::make_unique<LiveIntervals>(function.get(), &SI);
+        LISInt->analyze(*function);
+        LISInt->print(std::cout);
+
+        auto RAGreedyInt = RegAllocGreedy(function.get(), LISInt.get());
+        RAGreedyInt.run();
+        RAGreedyInt.print(std::cout);
+
+        auto rewriterInt =
+            RegisterRewriter(function.get(), RAGreedyInt.getVRM());
+        rewriterInt.rewrite();
+    }
+
+    std::cout << "Alloc for integer" << std::endl;
     std::cout << module.toString() << std::endl;
 
     return module;

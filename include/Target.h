@@ -24,12 +24,14 @@ class RISCV64Target {
                            const midend::Module& midend_module,
                            const midend::AnalysisManager* analysisManager =
                                nullptr);  // 阶段0.5：值重用优化
+    Module& constantFoldingPass(
+        riscv64::Module& module);  // 阶段1.6：常量折叠优化
     Module& initialFrameIndexPass(
         riscv64::Module& module);  // 阶段1.5：初始Frame Index
     Module& basicBlockReorderingPass(
         riscv64::Module& module);  // 阶段1.7：基本块重排优化
 
-    Module& slotIndexWrapperPass(riscv64::Module& module);
+    Module& RAGreedyPass(riscv64::Module& module);
 
     Module& registerAllocationPass(
         riscv64::Module& module);  // 阶段2：寄存器分配

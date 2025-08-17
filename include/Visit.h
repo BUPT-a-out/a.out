@@ -57,6 +57,8 @@ class Visitor {
                          BasicBlock* parent_bb);
     std::unique_ptr<RegisterOperand> immToReg(
         std::unique_ptr<MachineOperand> operand, BasicBlock* parent_bb);
+    std::unique_ptr<RegisterOperand> floatImmToReg(
+        std::unique_ptr<ImmediateOperand> operand, BasicBlock* parent_bb);
     std::unique_ptr<RegisterOperand> ensureFloatReg(
         std::unique_ptr<MachineOperand> operand, BasicBlock* parent_bb);
     std::unique_ptr<MachineOperand> visitCallInst(
@@ -75,14 +77,35 @@ class Visitor {
 
     void assignVirtRegsToFuncArgs(midend::Function* func);
 
+    template <typename T, typename ConstantType>
+    std::vector<T> processTypedArray(
+        const midend::ConstantArray* const_array, const midend::Type* type,
+        T default_value, std::function<T(const ConstantType*)> extractor);
+
+    template <typename T>
+    std::vector<T> processMultiDimArray(
+        const midend::ConstantArray* const_array, const midend::Type* type,
+        const midend::Type* element_type, T default_value);
+
+    // 返回一个新的寄存器操作数
+    static std::unique_ptr<RegisterOperand> cloneRegister(RegisterOperand* reg_op);
+    static std::unique_ptr<RegisterOperand> cloneRegister(RegisterOperand* reg_op,
+                                                   bool is_float);
+
     void createCFG(Function* func);
 
     void visit(const midend::Constant* constant);
     void visit(const midend::GlobalVariable* var, Module* parent_module);
 
+    void preProcessFuncArgs(const midend::Function* midend_func,
+                            midend::BasicBlock* midend_bb,
+                            Function* riscv_func);
+
     ConstantInitializer convertLLVMInitializerToConstantInitializer(
         const midend::Value* init, const midend::Type* type);
     CompilerType convertLLVMTypeToCompilerType(const midend::Type* llvm_type);
+
+    static bool isValidImmediateOffset(int64_t offset);
 
    private:
     CodeGenerator* codeGen_;
@@ -114,7 +137,6 @@ class Visitor {
     std::optional<RegisterOperand*> findRegForValue(const midend::Value* value);
 
     // 辅助函数：处理大偏移量的内存操作
-    bool isValidImmediateOffset(int64_t offset);
     std::unique_ptr<RegisterOperand> handleLargeOffset(
         std::unique_ptr<RegisterOperand> base_reg, int64_t offset,
         BasicBlock* parent_bb);
@@ -123,5 +145,9 @@ class Visitor {
                                    std::unique_ptr<RegisterOperand> base_reg,
                                    int64_t offset, BasicBlock* parent_bb);
 };
+
+namespace CFG {
+void print(Function* func);
+} // namespace CFG
 
 }  // namespace riscv64
