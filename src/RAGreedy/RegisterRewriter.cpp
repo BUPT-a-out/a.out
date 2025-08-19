@@ -70,8 +70,9 @@ void RegisterRewriter::rewrite() {
                         if ((assigningFloat &&
                              std::find(useFloats.begin(), useFloats.end(),
                                        virtReg) != useFloats.end()) ||
-                            (!assigningFloat && std::find(uses.begin(), uses.end(),
-                                                   virtReg) != uses.end())) {
+                            (!assigningFloat &&
+                             std::find(uses.begin(), uses.end(), virtReg) !=
+                                 uses.end())) {
                             spilledUsedRegs.push_back(virtReg);
                         }
 
@@ -79,8 +80,9 @@ void RegisterRewriter::rewrite() {
                         if ((assigningFloat &&
                              std::find(defFloats.begin(), defFloats.end(),
                                        virtReg) != defFloats.end()) ||
-                            (!assigningFloat && std::find(defs.begin(), defs.end(),
-                                                   virtReg) != defs.end())) {
+                            (!assigningFloat &&
+                             std::find(defs.begin(), defs.end(), virtReg) !=
+                                 defs.end())) {
                             spilledDefinedRegs.push_back(virtReg);
                         }
                     }
@@ -136,9 +138,9 @@ void RegisterRewriter::rewrite() {
                 // 1. 插入 FRAMEADDR 指令
                 auto frameAddrInst =
                     std::make_unique<Instruction>(Opcode::FRAMEADDR);
-                frameAddrInst->addOperand(
+                frameAddrInst->addOperand_(
                     std::make_unique<RegisterOperand>(addrReg, false));
-                frameAddrInst->addOperand(
+                frameAddrInst->addOperand_(
                     std::make_unique<FrameIndexOperand>(fi_id));
                 it = BB->insert(it, std::move(frameAddrInst));
                 ++it;
@@ -146,18 +148,18 @@ void RegisterRewriter::rewrite() {
                 // 2. 插入 LOAD 指令
                 if (assigningFloat) {
                     auto loadInst = std::make_unique<Instruction>(Opcode::FLW);
-                    loadInst->addOperand(
+                    loadInst->addOperand_(
                         std::make_unique<RegisterOperand>(dataReg, false));
-                    loadInst->addOperand(std::make_unique<MemoryOperand>(
+                    loadInst->addOperand_(std::make_unique<MemoryOperand>(
                         std::make_unique<RegisterOperand>(addrReg, false),
                         std::make_unique<ImmediateOperand>(0)));
                     it = BB->insert(it, std::move(loadInst));
                     ++it;
                 } else {
                     auto loadInst = std::make_unique<Instruction>(Opcode::LD);
-                    loadInst->addOperand(
+                    loadInst->addOperand_(
                         std::make_unique<RegisterOperand>(dataReg, false));
-                    loadInst->addOperand(std::make_unique<MemoryOperand>(
+                    loadInst->addOperand_(std::make_unique<MemoryOperand>(
                         std::make_unique<RegisterOperand>(addrReg, false),
                         std::make_unique<ImmediateOperand>(0)));
                     it = BB->insert(it, std::move(loadInst));
@@ -165,7 +167,8 @@ void RegisterRewriter::rewrite() {
                 }
 
                 // 3. 更新原指令中的寄存器引用
-                updateRegisterInInstruction(inst, virtReg, dataReg, assigningFloat);
+                updateRegisterInInstruction(inst, virtReg, dataReg,
+                                            assigningFloat);
             }
 
             ++it;  // 移动到当前指令的下一个位置
@@ -179,19 +182,19 @@ void RegisterRewriter::rewrite() {
                 auto fi_id = stackSlot2FrameIndex[slot];
 
                 // 分配数据寄存器和地址寄存器
-                unsigned dataReg =
-                    selectAvailablePhysicalDataReg(inst, assigningFloat);
+                unsigned dataReg = assigningFloat ? 33 : 6;  // ft1/t1
                 unsigned addrReg = 5;  // t0 用于地址计算
 
                 // 更新原指令中的寄存器引用
-                updateRegisterInInstruction(inst, virtReg, dataReg, assigningFloat);
+                updateRegisterInInstruction(inst, virtReg, dataReg,
+                                            assigningFloat);
 
                 // 1. 插入 FRAMEADDR 指令
                 auto frameAddrInst =
                     std::make_unique<Instruction>(Opcode::FRAMEADDR);
-                frameAddrInst->addOperand(
+                frameAddrInst->addOperand_(
                     std::make_unique<RegisterOperand>(addrReg, false));
-                frameAddrInst->addOperand(
+                frameAddrInst->addOperand_(
                     std::make_unique<FrameIndexOperand>(fi_id));
                 it = BB->insert(it, std::move(frameAddrInst));
                 ++it;
@@ -199,18 +202,18 @@ void RegisterRewriter::rewrite() {
                 // 2. 插入 STORE 指令
                 if (assigningFloat) {
                     auto storeInst = std::make_unique<Instruction>(Opcode::FSW);
-                    storeInst->addOperand(
+                    storeInst->addOperand_(
                         std::make_unique<RegisterOperand>(dataReg, false));
-                    storeInst->addOperand(std::make_unique<MemoryOperand>(
+                    storeInst->addOperand_(std::make_unique<MemoryOperand>(
                         std::make_unique<RegisterOperand>(addrReg, false),
                         std::make_unique<ImmediateOperand>(0)));
                     it = BB->insert(it, std::move(storeInst));
                     ++it;
                 } else {
                     auto storeInst = std::make_unique<Instruction>(Opcode::SD);
-                    storeInst->addOperand(
+                    storeInst->addOperand_(
                         std::make_unique<RegisterOperand>(dataReg, false));
-                    storeInst->addOperand(std::make_unique<MemoryOperand>(
+                    storeInst->addOperand_(std::make_unique<MemoryOperand>(
                         std::make_unique<RegisterOperand>(addrReg, false),
                         std::make_unique<ImmediateOperand>(0)));
                     it = BB->insert(it, std::move(storeInst));
@@ -314,10 +317,10 @@ void RegisterRewriter::print(std::ostream& OS) const {
 void performRegisterRewriting(Function* function, VirtRegMap* VRM) {
     RegisterRewriter rewriter(function, VRM);
 
-    std::cout << "Starting register rewriting...\n";
+    DEBUG_OUT() << "Starting register rewriting...\n";
     rewriter.rewrite();
 
-    std::cout << "Register rewriting completed.\n";
+    DEBUG_OUT() << "Register rewriting completed.\n";
     rewriter.print(std::cout);
 }
 

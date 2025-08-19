@@ -8,7 +8,17 @@ enum class ValueKind {
     Value,
     Use,
     User,
-    Constant,
+
+    ConstantBegin,
+    ConstantInt,
+    ConstantFP,
+    ConstantPointerNull,
+    ConstantArray,
+    ConstantGEP,
+    ConstantExpr,
+    UndefValue,
+    ConstantEnd,
+
     GlobalVariable,
     Function,
     BasicBlock,
@@ -27,6 +37,8 @@ enum class ValueKind {
     BranchInst,
     PHINode,
     InstructionEnd,
+
+    RISCVInstruction
 };
 
 template <typename To, typename From>

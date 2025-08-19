@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -20,8 +21,6 @@ class IRPrinter {
     std::stringstream output_;
 
     unsigned getValueNumber(const Value* v);
-    std::string getValueName(const Value* v);
-    std::string printType(Type* ty);
     void printInstruction(const Instruction* inst);
     void printBasicBlock(const BasicBlock* bb);
     void printFunction(const Function* func);
@@ -29,8 +28,12 @@ class IRPrinter {
    public:
     IRPrinter() = default;
 
+    std::string getValueName(const Value* v);
+    static std::string printType(Type* ty);
+
     // Print individual components
     std::string print(const Module* module);
+    std::string print(std::unique_ptr<Module>& module);
     std::string print(const Function* func);
     std::string print(const BasicBlock* bb);
     std::string print(const Instruction* inst);

@@ -1,6 +1,7 @@
 #include "RegAllocChaitin.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <climits>
 #include <iostream>
 #include <limits>
@@ -11,6 +12,15 @@
 
 #include "SpillCodeOptimizer.h"
 #include "StackFrameManager.h"
+
+// Debug output macro - only outputs when A_OUT_DEBUG is defined
+#ifdef A_OUT_DEBUG
+#define DEBUG_OUT() std::cout
+#else
+#define DEBUG_OUT() \
+    if constexpr (false) std::cout
+#endif
+
 namespace riscv64 {
 
 /// Entry
@@ -236,13 +246,13 @@ void RegAllocChaitin::buildInterferenceGraph() {
 
     // 添加调试信息：打印所有虚拟寄存器
     if (assigningFloat) {
-        std::cout << "Float virtual registers found: ";
+        DEBUG_OUT() << "Float virtual registers found: ";
         for (const auto& [regNum, node] : interferenceGraph) {
             if (!node->isPrecolored) {
-                std::cout << regNum << " ";
+                DEBUG_OUT() << regNum << " ";
             }
         }
-        std::cout << "\n";
+        DEBUG_OUT() << "\n";
     }
 
     // 构建基于活跃变量分析的冲突边
@@ -252,13 +262,13 @@ void RegAllocChaitin::buildInterferenceGraph() {
 
         // 添加调试信息：打印基本块的活跃性信息
         if (assigningFloat && !live.empty()) {
-            std::cout << "BB liveOut: ";
+            DEBUG_OUT() << "BB liveOut: ";
             for (unsigned reg : live) {
                 if (!isPhysicalReg(reg)) {
-                    std::cout << reg << " ";
+                    DEBUG_OUT() << reg << " ";
                 }
             }
-            std::cout << "\n";
+            DEBUG_OUT() << "\n";
         }
 
         // 逆序遍历指令
@@ -292,8 +302,8 @@ void RegAllocChaitin::buildInterferenceGraph() {
                         addInterference(defReg, liveReg);
                         // 添加调试信息
                         if (assigningFloat && !isPhysicalReg(defReg)) {
-                            std::cout << "Adding interference: " << defReg
-                                      << " <-> " << liveReg << "\n";
+                            DEBUG_OUT() << "Adding interference: " << defReg
+                                        << " <-> " << liveReg << "\n";
                         }
                     }
                 }
@@ -427,8 +437,9 @@ std::vector<unsigned> RegAllocChaitin::getOptimisticSimplificationOrder() {
         optimisticNodes.insert(candidate);  // 标记为乐观节点
         highDegreeNodes.erase(candidate);
 
-        std::cout << "Optimistically removing high-degree node " << candidate
-                  << " with degree " << getCachedDegree(candidate) << std::endl;
+        DEBUG_OUT() << "Optimistically removing high-degree node " << candidate
+                    << " with degree " << getCachedDegree(candidate)
+                    << std::endl;
 
         // 更新邻居度数
         if (interferenceGraph.find(candidate) != interferenceGraph.end()) {
@@ -501,6 +512,39 @@ std::vector<unsigned> RegAllocChaitin::getOptimisticSimplificationOrder() {
     return order;
 }
 
+unsigned RegAllocChaitin::computeSpillCost(unsigned virtReg) {
+    unsigned cost = 0;
+    for (auto& bb : *function) {
+        auto loopWeight = computeLoopWeight(bb.get());
+        for (auto& instr : *bb) {
+            unsigned localCost = 0;
+            auto usedRegs = getUsedRegs(instr.get());
+            auto definedRegs = getDefinedRegs(instr.get());
+            if (std::find(usedRegs.begin(), usedRegs.end(), virtReg) !=
+                usedRegs.end()) {
+                localCost += 1;
+            }
+
+            if (std::find(definedRegs.begin(), definedRegs.end(), virtReg) !=
+                definedRegs.end()) {
+                localCost += 1;
+            }
+
+            cost += localCost * loopWeight;
+        }
+    }
+    return cost;
+}
+
+unsigned RegAllocChaitin::computeLoopWeight(BasicBlock* bb) {
+    if (LoopAnal) {
+        auto midendBlock = function->getBasicBlock(bb);
+        return 1 << LoopAnal->getLoopDepth(midendBlock);
+    } else {
+        return 1;
+    }
+}
+
 // 选择乐观溢出候选者（溢出代价最小的）
 unsigned RegAllocChaitin::selectOptimisticSpillCandidate(
     const std::unordered_set<unsigned>& candidates) {
@@ -539,7 +583,6 @@ unsigned RegAllocChaitin::selectOptimisticSpillCandidate(
 }
 
 // 计算溢出代价 (简单)
-// TODO: 循环变量优化
 double RegAllocChaitin::calculateSpillCost(unsigned reg) {
     double cost = 0.0;
 
@@ -584,9 +627,9 @@ bool RegAllocChaitin::attemptOptimisticColoring(
         bool isOptimisticNode =
             (optimisticNodes.find(regNum) != optimisticNodes.end());
         if (isOptimisticNode) {
-            std::cout << "Attempting optimistic coloring for register "
-                      << regNum << ", neighbors: " << node->neighbors.size()
-                      << ", used colors: " << usedColors.size() << std::endl;
+            DEBUG_OUT() << "Attempting optimistic coloring for register "
+                        << regNum << ", neighbors: " << node->neighbors.size()
+                        << ", used colors: " << usedColors.size() << std::endl;
         }
 
         // 正常着色流程
@@ -618,8 +661,8 @@ bool RegAllocChaitin::attemptOptimisticColoring(
         if (selectedColor == -1) {
             // 乐观着色失败
             if (isOptimisticNode) {
-                std::cout << "Optimistic coloring failed for register "
-                          << regNum << ", selecting for spill" << std::endl;
+                DEBUG_OUT() << "Optimistic coloring failed for register "
+                            << regNum << ", selecting for spill" << std::endl;
             }
 
             if (!ABI::isReservedReg(regNum, assigningFloat)) {
@@ -632,9 +675,9 @@ bool RegAllocChaitin::attemptOptimisticColoring(
         } else {
             // 着色成功
             if (isOptimisticNode) {
-                std::cout << "Optimistic coloring succeeded for register "
-                          << regNum << " with color " << selectedColor
-                          << std::endl;
+                DEBUG_OUT()
+                    << "Optimistic coloring succeeded for register " << regNum
+                    << " with color " << selectedColor << std::endl;
             }
 
             node->color = selectedColor;
@@ -655,9 +698,9 @@ bool RegAllocChaitin::attemptOptimisticColoring(
     if (optimisticTotal > 0) {
         double successRate =
             (double)optimisticSuccess / optimisticTotal * 100.0;
-        std::cout << "Optimistic coloring success rate: " << optimisticSuccess
-                  << "/" << optimisticTotal << " (" << successRate << "%)"
-                  << std::endl;
+        DEBUG_OUT() << "Optimistic coloring success rate: " << optimisticSuccess
+                    << "/" << optimisticTotal << " (" << successRate << "%)"
+                    << std::endl;
     }
 
     return spilledRegs.empty();
@@ -739,19 +782,39 @@ std::vector<unsigned> RegAllocChaitin::getSimplificationOrder() {
         invalidateDegreeCache(regNum);
     }
 
-    // 如果还有未移除的节点，选择溢出候选
-    for (auto& [regNum, node] : interferenceGraph) {
-        if (removed.find(regNum) == removed.end() && !node->isPrecolored) {
-            if (!ABI::isReservedReg(regNum, assigningFloat)) {
-                std::cout << "Spill reg " << regNum << " with degree "
-                          << getCachedDegree(regNum) << std::endl;
-                spilledRegs.insert(regNum);
-            } else {
-                std::cerr
-                    << "Warning: Reserved register " << regNum << " ("
-                    << ABI::getABINameFromRegNum(regNum) << ") "
-                    << "cannot be spilled and will cause allocation failure."
-                    << std::endl;
+    using spillCand = std::pair<double, unsigned>;
+    std::priority_queue<spillCand, std::vector<spillCand>,
+                        std::greater<spillCand>>
+        spillWorkList;
+
+    for (auto const& [regNum, node] : interferenceGraph) {
+        if (!removed.count(regNum) && !node->isPrecolored &&
+            !ABI::isReservedReg(regNum, assigningFloat)) {
+            int deg = getCachedDegree(regNum);
+            double cost = (double)computeSpillCost(regNum) / deg;
+            spillWorkList.push(std::make_pair(cost, regNum));
+        }
+    }
+
+    while (!spillWorkList.empty()) {
+        spillCand reg = spillWorkList.top();
+        spillWorkList.pop();
+
+        auto regNum = reg.second;
+        auto deg = getCachedDegree(regNum);
+        if (deg < static_cast<int>(availableRegs.size())) {
+            removed.insert(regNum);
+        } else {
+            spilledRegs.insert(regNum);
+        }
+
+        if (interferenceGraph.find(regNum) != interferenceGraph.end()) {
+            for (unsigned neighbor : interferenceGraph[regNum]->neighbors) {
+                if (removed.find(neighbor) == removed.end() &&
+                    !interferenceGraph[neighbor]->isPrecolored) {
+                    // 更新邻居的度数
+                    degreeCache[neighbor]--;
+                }
             }
         }
     }
@@ -783,13 +846,13 @@ bool RegAllocChaitin::attemptColoring(const std::vector<unsigned>& order) {
 
         // 添加调试信息
         if (assigningFloat) {
-            std::cout << "Coloring virtual register " << regNum
-                      << ", neighbors: " << node->neighbors.size()
-                      << ", used colors: ";
+            DEBUG_OUT() << "Coloring virtual register " << regNum
+                        << ", neighbors: " << node->neighbors.size()
+                        << ", used colors: ";
             for (int color : usedColors) {
-                std::cout << color << " ";
+                DEBUG_OUT() << color << " ";
             }
-            std::cout << "\n";
+            DEBUG_OUT() << "\n";
         }
 
         int selectedColor = -1;
@@ -834,9 +897,9 @@ bool RegAllocChaitin::attemptColoring(const std::vector<unsigned>& order) {
         }
 
         if (assigningFloat) {
-            std::cout << "Assigned virtual register " << regNum
-                      << " to physical register " << selectedColor << " ("
-                      << ABI::getABINameFromRegNum(selectedColor) << ")\n";
+            DEBUG_OUT() << "Assigned virtual register " << regNum
+                        << " to physical register " << selectedColor << " ("
+                        << ABI::getABINameFromRegNum(selectedColor) << ")\n";
         }
 
         node->color = selectedColor;
@@ -866,6 +929,7 @@ void RegAllocChaitin::handleSpills() {
     clearDegreeCache();
 }
 
+const int BATCH_SIZE = 10;
 std::vector<unsigned> RegAllocChaitin::selectSpillCandidates() {
     std::vector<unsigned> candidates;
 
@@ -879,15 +943,42 @@ std::vector<unsigned> RegAllocChaitin::selectSpillCandidates() {
         }
     }
 
-    // 优先spill链深度较小的寄存器
     std::sort(candidates.begin(), candidates.end(),
               [this](unsigned a, unsigned b) {
-                  // 深度相同时，按度数排序
-                  return interferenceGraph[a]->neighbors.size() >
-                         interferenceGraph[b]->neighbors.size();
+                  auto degA = interferenceGraph[a]->neighbors.size();
+                  auto degB = interferenceGraph[b]->neighbors.size();
+                  auto costA = computeSpillCost(a);
+                  auto costB = computeSpillCost(b);
+
+                  auto A = (double)costA / degA;
+                  auto B = (double)costB / degB;
+                  return A < B;
               });
 
-    return candidates;
+    if (candidates.size() <= 30) {
+        std::vector<unsigned> cand = {candidates[0]};
+        return cand;
+    } else {
+        std::vector<unsigned> cand;
+        cand.assign(candidates.begin(), candidates.begin() + BATCH_SIZE);
+        return cand;
+    }
+
+}
+
+unsigned RegAllocChaitin::selectSpillCandidate() {
+    unsigned spillCandidate = 0;
+    unsigned minCost = UINT_MAX;
+    for (unsigned regNum : spilledRegs) {
+        if (!ABI::isReservedReg(regNum, assigningFloat)) {
+            auto currentCost = computeSpillCost(regNum);
+            if (currentCost < minCost) {
+                minCost = currentCost;
+                spillCandidate = regNum;
+            }
+        }
+    }
+    return spillCandidate;
 }
 
 void RegAllocChaitin::insertSpillCode(unsigned reg) {
@@ -914,9 +1005,9 @@ void RegAllocChaitin::insertSpillCode(unsigned reg) {
                 // 1. 首先生成frameaddr指令获取溢出槽地址
                 auto frameAddrInst =
                     std::make_unique<Instruction>(Opcode::FRAMEADDR);
-                frameAddrInst->addOperand(
+                frameAddrInst->addOperand_(
                     std::make_unique<RegisterOperand>(addrReg, false));
-                frameAddrInst->addOperand(
+                frameAddrInst->addOperand_(
                     std::make_unique<FrameIndexOperand>(fi_id));
                 it = bb->insert(it, std::move(frameAddrInst));
                 ++it;
@@ -924,18 +1015,18 @@ void RegAllocChaitin::insertSpillCode(unsigned reg) {
                 // 2. 生成load指令从溢出槽加载值
                 if (assigningFloat) {
                     auto loadInst = std::make_unique<Instruction>(Opcode::FLW);
-                    loadInst->addOperand(
+                    loadInst->addOperand_(
                         std::make_unique<RegisterOperand>(dataReg, false));
-                    loadInst->addOperand(std::make_unique<MemoryOperand>(
+                    loadInst->addOperand_(std::make_unique<MemoryOperand>(
                         std::make_unique<RegisterOperand>(addrReg, false),
                         std::make_unique<ImmediateOperand>(0)));
                     it = bb->insert(it, std::move(loadInst));
                     ++it;
                 } else {
                     auto loadInst = std::make_unique<Instruction>(Opcode::LD);
-                    loadInst->addOperand(
+                    loadInst->addOperand_(
                         std::make_unique<RegisterOperand>(dataReg, false));
-                    loadInst->addOperand(std::make_unique<MemoryOperand>(
+                    loadInst->addOperand_(std::make_unique<MemoryOperand>(
                         std::make_unique<RegisterOperand>(addrReg, false),
                         std::make_unique<ImmediateOperand>(0)));
                     it = bb->insert(it, std::move(loadInst));
@@ -963,9 +1054,9 @@ void RegAllocChaitin::insertSpillCode(unsigned reg) {
 
                 auto frameAddrInst =
                     std::make_unique<Instruction>(Opcode::FRAMEADDR);
-                frameAddrInst->addOperand(
+                frameAddrInst->addOperand_(
                     std::make_unique<RegisterOperand>(addrReg, false));
-                frameAddrInst->addOperand(
+                frameAddrInst->addOperand_(
                     std::make_unique<FrameIndexOperand>(fi_id));
                 it = bb->insert(it, std::move(frameAddrInst));
                 ++it;
@@ -973,17 +1064,17 @@ void RegAllocChaitin::insertSpillCode(unsigned reg) {
                 // 生成store指令将值存储到溢出槽
                 if (assigningFloat) {
                     auto storeInst = std::make_unique<Instruction>(Opcode::FSW);
-                    storeInst->addOperand(
+                    storeInst->addOperand_(
                         std::make_unique<RegisterOperand>(dataReg, false));
-                    storeInst->addOperand(std::make_unique<MemoryOperand>(
+                    storeInst->addOperand_(std::make_unique<MemoryOperand>(
                         std::make_unique<RegisterOperand>(addrReg, false),
                         std::make_unique<ImmediateOperand>(0)));
                     it = bb->insert(it, std::move(storeInst));
                 } else {
                     auto storeInst = std::make_unique<Instruction>(Opcode::SD);
-                    storeInst->addOperand(
+                    storeInst->addOperand_(
                         std::make_unique<RegisterOperand>(dataReg, false));
-                    storeInst->addOperand(std::make_unique<MemoryOperand>(
+                    storeInst->addOperand_(std::make_unique<MemoryOperand>(
                         std::make_unique<RegisterOperand>(addrReg, false),
                         std::make_unique<ImmediateOperand>(0)));
                     it = bb->insert(it, std::move(storeInst));
@@ -1303,6 +1394,7 @@ int RegAllocChaitin::getBasicBlockFrequency(BasicBlock* bb) {
     return std::max(frequency, 1);  // 确保至少为1
 }
 
+// TODO: low perf
 int RegAllocChaitin::getRegisterUsageCount(unsigned reg) {
     int count = 0;
     for (auto& bb : *function) {
@@ -1526,8 +1618,8 @@ void RegAllocChaitin::coalesceRegisters(unsigned src, unsigned dst) {
         // 更新冲突图
         updateInterferenceAfterCoalesce(mergeTarget, mergeSource);
 
-        std::cout << "Coalesced register " << mergeSource << " into "
-                  << mergeTarget << std::endl;
+        DEBUG_OUT() << "Coalesced register " << mergeSource << " into "
+                    << mergeTarget << std::endl;
     }
 }
 
@@ -1934,12 +2026,13 @@ void RegAllocChaitin::setReturnValueConstraints() {
                                 if (!isPhysicalReg(srcReg)) {
                                     addPhysicalConstraint(srcReg, reg);
 
-                                    std::cout << "Added return value "
-                                                 "constraint: virtual reg "
-                                              << srcReg << " -> physical reg "
-                                              << reg << " ("
-                                              << ABI::getABINameFromRegNum(reg)
-                                              << ")" << std::endl;
+                                    DEBUG_OUT()
+                                        << "Added return value "
+                                           "constraint: virtual reg "
+                                        << srcReg << " -> physical reg " << reg
+                                        << " ("
+                                        << ABI::getABINameFromRegNum(reg) << ")"
+                                        << std::endl;
                                 }
                             }
                         }
@@ -2006,7 +2099,7 @@ void RegAllocChaitin::setPreCallConstraints(BasicBlock* bb,
                     if (!isPhysicalReg(srcReg)) {
                         addPhysicalConstraint(srcReg, reg);
 
-                        std::cout
+                        DEBUG_OUT()
                             << "Added call argument constraint: virtual reg "
                             << srcReg << " -> physical reg " << reg << " ("
                             << ABI::getABINameFromRegNum(reg) << ")"
@@ -2043,7 +2136,7 @@ void RegAllocChaitin::setPostCallConstraints(BasicBlock* bb,
                     if (!isPhysicalReg(dstReg)) {
                         addPhysicalConstraint(dstReg, reg);
 
-                        std::cout
+                        DEBUG_OUT()
                             << "Added call return constraint: virtual reg "
                             << dstReg << " -> physical reg " << reg << " ("
                             << ABI::getABINameFromRegNum(reg) << ")"
@@ -2076,9 +2169,9 @@ std::vector<unsigned> RegAllocChaitin::getUsedRegs(Instruction* inst) const {
         // auto ufr = inst->getUsedFloatRegs();
         // if (!ufr.empty()) {
 
-        //     std::cout<< inst->toString() << " uses ";
+        //     DEBUG_OUT()<< inst->toString() << " uses ";
         //     for (auto r: ufr) {
-        //         std::cout << r << " ";
+        //         DEBUG_OUT() << r << " ";
         //     }
         //     std:: cout << "\n";
         // }
@@ -2090,37 +2183,37 @@ std::vector<unsigned> RegAllocChaitin::getUsedRegs(Instruction* inst) const {
 
 /// Print
 void RegAllocChaitin::printInterferenceGraph() const {
-    std::cout << "Interference Graph (Virtual Registers Only):\n";
+    DEBUG_OUT() << "Interference Graph (Virtual Registers Only):\n";
     for (const auto& [regNum, node] : interferenceGraph) {
         if (!node->isPrecolored) {  // 只打印虚拟寄存器
-            std::cout << "Virtual register " << regNum << " conflicts with: ";
+            DEBUG_OUT() << "Virtual register " << regNum << " conflicts with: ";
             for (unsigned neighbor : node->neighbors) {
                 if (!isPhysicalReg(neighbor)) {  // 只显示与其他虚拟寄存器的冲突
-                    std::cout << neighbor << " ";
+                    DEBUG_OUT() << neighbor << " ";
                 }
             }
-            std::cout << "\n";
+            DEBUG_OUT() << "\n";
         }
     }
-    std::cout << "\n";
+    DEBUG_OUT() << "\n";
 }
 
 void RegAllocChaitin::printAllocationResult() const {
-    std::cout << "Register Allocation Result:\n";
+    DEBUG_OUT() << "Register Allocation Result:\n";
     for (const auto& [virtualReg, physicalReg] : virtualToPhysical) {
         if (!isPhysicalReg(virtualReg)) {
-            std::cout << "Virtual register " << virtualReg
-                      << " -> Physical register " << physicalReg << " ("
-                      << ABI::getABINameFromRegNum(physicalReg) << ")\n";
+            DEBUG_OUT() << "Virtual register " << virtualReg
+                        << " -> Physical register " << physicalReg << " ("
+                        << ABI::getABINameFromRegNum(physicalReg) << ")\n";
         }
     }
 
     if (!spilledRegs.empty()) {
-        std::cout << "Spilled registers: ";
+        DEBUG_OUT() << "Spilled registers: ";
         for (unsigned reg : spilledRegs) {
-            std::cout << reg << " ";
+            DEBUG_OUT() << reg << " ";
         }
-        std::cout << "\n";
+        DEBUG_OUT() << "\n";
     }
 
     // 添加调试信息：检查是否多个虚拟寄存器分配到同一个物理寄存器
@@ -2131,20 +2224,20 @@ void RegAllocChaitin::printAllocationResult() const {
         }
     }
 
-    std::cout << "\nPhysical register usage summary:\n";
+    DEBUG_OUT() << "\nPhysical register usage summary:\n";
     for (const auto& [physReg, virtuals] : physToVirtuals) {
-        std::cout << "Physical register " << physReg << " ("
-                  << ABI::getABINameFromRegNum(physReg) << ") allocated to "
-                  << virtuals.size() << " virtual registers: ";
+        DEBUG_OUT() << "Physical register " << physReg << " ("
+                    << ABI::getABINameFromRegNum(physReg) << ") allocated to "
+                    << virtuals.size() << " virtual registers: ";
         for (unsigned vReg : virtuals) {
-            std::cout << vReg << " ";
+            DEBUG_OUT() << vReg << " ";
         }
-        std::cout << "\n";
+        DEBUG_OUT() << "\n";
 
         // 如果一个物理寄存器分配给多个虚拟寄存器，这可能表明有问题
         if (virtuals.size() > 1) {
-            std::cout << "WARNING: Physical register " << physReg
-                      << " is allocated to multiple virtual registers!\n";
+            DEBUG_OUT() << "WARNING: Physical register " << physReg
+                        << " is allocated to multiple virtual registers!\n";
         }
     }
 }
@@ -2152,12 +2245,12 @@ void RegAllocChaitin::printAllocationResult() const {
 // 打印合并结果
 void RegAllocChaitin::printCoalesceResult() const {
     if (!coalesceMap.empty()) {
-        std::cout << "Register Coalescing Result:\n";
+        DEBUG_OUT() << "Register Coalescing Result:\n";
         for (const auto& [src, dst] : coalesceMap) {
-            std::cout << "Register " << src << " coalesced into " << dst
-                      << std::endl;
+            DEBUG_OUT() << "Register " << src << " coalesced into " << dst
+                        << std::endl;
         }
-        std::cout << std::endl;
+        DEBUG_OUT() << std::endl;
     }
 }
 

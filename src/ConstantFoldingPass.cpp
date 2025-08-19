@@ -1,17 +1,32 @@
 #include "ConstantFoldingPass.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <unordered_set>
 
 #include "Visit.h"
+
+// Debug output macro - only outputs when A_OUT_DEBUG is defined
+#ifdef A_OUT_DEBUG
+#define DEBUG_OUT() std::cout
+#else
+#define DEBUG_OUT() \
+    if constexpr (false) std::cout
+#endif
 
 namespace riscv64 {
 
 void ConstantFolding::runOnFunction(Function* function) {
     // Perform constant folding on the given function
     for (auto& bb : *function) {
-        runOnBasicBlock(bb.get());
+        for (int i = 0; i < 3; i++) {
+            DEBUG_OUT() << "(" << i + 1
+                        << " / 3) Running constant folding on basic block: "
+                        << bb->getLabel() << std::endl;
+            runOnBasicBlock(bb.get());
+        }
     }
 }
 
@@ -28,10 +43,24 @@ void ConstantFolding::runOnBasicBlock(BasicBlock* basicBlock) {
         handleInstruction(inst.get(), basicBlock);
     }
 
+    // 去重后再删除，避免同一指令被多次加入（例如 peephole
+    // 多轮处理）导致的二次释放
+    std::unordered_set<Instruction*> seen;
     for (auto* inst : instructionsToRemove) {
-        // Remove the instruction from the basic block
-        basicBlock->removeInstruction(inst);
-        std::cout << "Removed instruction: " << inst->toString() << std::endl;
+        if (!inst) {
+            continue;
+        }
+        if (seen.insert(inst).second) {  // first time seen
+            std::string text;
+            // toString 里会访问 operands，安全起见在移除前取字符串
+            try {
+                text = inst->toString();
+            } catch (...) {
+                text = "<invalid>";
+            }
+            DEBUG_OUT() << "Removed instruction: " << text << std::endl;
+            basicBlock->removeInstruction(inst);
+        }
     }
 }
 
@@ -39,12 +68,15 @@ void ConstantFolding::handleInstruction(Instruction* inst,
                                         BasicBlock* parent_bb) {
     // 处理重定义
     if (inst->getOprandCount() >= 1) {
-        auto* defined_operand = inst->getOperand(0);
-        if (defined_operand->isReg()) {
-            // 旧值失效
-            virtualRegisterConstants.erase(defined_operand->getRegNum());
+        // auto* defined_operand = inst->getOperand(0);
+        auto defined_regs = inst->getDefinedIntegerRegs();
+        // 旧值失效
+        for (auto& reg : defined_regs) {
+            virtualRegisterConstants.erase(reg);
         }
     }
+
+    useZeroReg(inst, parent_bb);
 
     // 尝试折叠
     foldInstruction(inst, parent_bb);
@@ -78,6 +110,13 @@ std::optional<int64_t> ConstantFolding::getConstant(MachineOperand& operand) {
 
 void ConstantFolding::foldInstruction(Instruction* inst,
                                       BasicBlock* parent_bb) {
+    // 如果是 CALL 指令，清除 10~17
+    if (inst->getOpcode() == CALL) {
+        // DEBUG_OUT() << ""
+        for (unsigned int i = 10; i <= 17; i++) {
+            removeRegMap(i);
+        }
+    }
     // 目前假定第0个操作数是目的寄存器，后续的是源操作数
     if (inst->getOprandCount() <= 1) {
         return;  // 没有源操作数，无需折叠
@@ -121,11 +160,11 @@ void ConstantFolding::foldInstruction(Instruction* inst,
     // 重写指令为 LI rd, imm
     inst->clearOperands();
     inst->setOpcode(Opcode::LI);
-    inst->addOperand(std::move(dest_clone));
-    inst->addOperand(std::make_unique<ImmediateOperand>(result.value()));
+    inst->addOperand_(std::move(dest_clone));
+    inst->addOperand_(std::make_unique<ImmediateOperand>(result.value()));
 
-    std::cout << "Folded instruction: '" << original << "' to '"
-              << inst->toString() << "'" << std::endl;
+    DEBUG_OUT() << "Folded instruction: '" << original << "' to '"
+                << inst->toString() << "'" << std::endl;
 }
 
 void ConstantFolding::peepholeOptimize(Instruction* inst,
@@ -168,11 +207,11 @@ void ConstantFolding::foldToITypeInst(Instruction* inst,
                 std::string original = inst->toString();
                 inst->clearOperands();
                 inst->setOpcode(Opcode::SGT);  // use pseudo greater-than
-                inst->addOperand(std::move(rdClone));
-                inst->addOperand(std::move(rsClone));
-                inst->addOperand(std::make_unique<ImmediateOperand>(immVal));
-                std::cout << "Flip predicate (const-first SLT): '" << original
-                          << "' -> '" << inst->toString() << "'" << std::endl;
+                inst->addOperand_(std::move(rdClone));
+                inst->addOperand_(std::move(rsClone));
+                inst->addOperand_(std::make_unique<ImmediateOperand>(immVal));
+                DEBUG_OUT() << "Flip predicate (const-first SLT): '" << original
+                            << "' -> '" << inst->toString() << "'" << std::endl;
                 // After rewriting, proceed with possible further peephole in
                 // later passes (do not continue here to avoid double-processing
                 // now)
@@ -271,12 +310,12 @@ void ConstantFolding::foldToITypeInst(Instruction* inst,
 
     inst->clearOperands();
     inst->setOpcode(newOpcode);
-    inst->addOperand(std::move(rdClone));
-    inst->addOperand(std::move(rs1Clone));
-    inst->addOperand(std::make_unique<ImmediateOperand>(immValue));
+    inst->addOperand_(std::move(rdClone));
+    inst->addOperand_(std::move(rs1Clone));
+    inst->addOperand_(std::make_unique<ImmediateOperand>(immValue));
 
-    std::cout << "Converted R-type to I-type instruction: '" << original
-              << "' -> '" << inst->toString() << "'" << std::endl;
+    DEBUG_OUT() << "Converted R-type to I-type instruction: '" << original
+                << "' -> '" << inst->toString() << "'" << std::endl;
 }
 
 void ConstantFolding::algebraicIdentitySimplify(Instruction* inst,
@@ -316,9 +355,9 @@ void ConstantFolding::algebraicIdentitySimplify(Instruction* inst,
         auto srcClone = cloneReg(sourceRegOperand);        // clone before clear
         inst->clearOperands();
         inst->setOpcode(Opcode::ADDI);
-        inst->addOperand(std::move(destClone));
-        inst->addOperand(std::move(srcClone));
-        inst->addOperand(std::make_unique<ImmediateOperand>(0));
+        inst->addOperand_(std::move(destClone));
+        inst->addOperand_(std::move(srcClone));
+        inst->addOperand_(std::make_unique<ImmediateOperand>(0));
         // Constant propagation update
         auto itConst = virtualRegisterConstants.find(srcRegNum);
         if (itConst != virtualRegisterConstants.end()) {
@@ -326,8 +365,8 @@ void ConstantFolding::algebraicIdentitySimplify(Instruction* inst,
         } else {
             virtualRegisterConstants.erase(destRegNum);
         }
-        std::cout << "Algebraic simplify: '" << original << "' -> '"
-                  << inst->toString() << "'" << std::endl;
+        DEBUG_OUT() << "Algebraic simplify: '" << original << "' -> '"
+                    << inst->toString() << "'" << std::endl;
     };
 
     auto emitLiZero = [&]() {
@@ -336,11 +375,11 @@ void ConstantFolding::algebraicIdentitySimplify(Instruction* inst,
         auto destClone = Visitor::cloneRegister(destReg);
         inst->clearOperands();
         inst->setOpcode(Opcode::LI);
-        inst->addOperand(std::move(destClone));
-        inst->addOperand(std::make_unique<ImmediateOperand>(0));
+        inst->addOperand_(std::move(destClone));
+        inst->addOperand_(std::make_unique<ImmediateOperand>(0));
         mapRegToConstant(destRegNum, 0);
-        std::cout << "Algebraic simplify: '" << original << "' -> '"
-                  << inst->toString() << "'" << std::endl;
+        DEBUG_OUT() << "Algebraic simplify: '" << original << "' -> '"
+                    << inst->toString() << "'" << std::endl;
     };
 
     switch (opcode) {
@@ -445,9 +484,9 @@ void ConstantFolding::strengthReduction(Instruction* inst,
         auto sourceClone = cloneRegOperand(fromReg);
         inst->clearOperands();
         inst->setOpcode(newOpcode);
-        inst->addOperand(std::move(destClone));
-        inst->addOperand(std::move(sourceClone));
-        inst->addOperand(std::make_unique<ImmediateOperand>(
+        inst->addOperand_(std::move(destClone));
+        inst->addOperand_(std::move(sourceClone));
+        inst->addOperand_(std::make_unique<ImmediateOperand>(
             static_cast<int64_t>(shiftAmount)));
         // Constant propagation update
         auto itConst = virtualRegisterConstants.find(sourceRegNum);
@@ -478,8 +517,8 @@ void ConstantFolding::strengthReduction(Instruction* inst,
         } else {
             virtualRegisterConstants.erase(destRegNum);
         }
-        std::cout << "Strength reduction: '" << original << "' -> '"
-                  << inst->toString() << "'" << std::endl;
+        DEBUG_OUT() << "Strength reduction: '" << original << "' -> '"
+                    << inst->toString() << "'" << std::endl;
     };
 
     constexpr unsigned SHIFT_WIDTH_32 = 32U;  // 5-bit shift amount range
@@ -600,12 +639,12 @@ void ConstantFolding::bitwiseOperationSimplify(Instruction* inst,
         auto rdClone = cloneReg(rd);
         inst->clearOperands();
         inst->setOpcode(Opcode::LI);
-        inst->addOperand(std::move(rdClone));
-        inst->addOperand(
+        inst->addOperand_(std::move(rdClone));
+        inst->addOperand_(
             std::make_unique<ImmediateOperand>(static_cast<int64_t>(imm)));
         mapRegToConstant(rdNum, imm);
-        std::cout << "Bitwise simplify: '" << original << "' -> '"
-                  << inst->toString() << "'" << std::endl;
+        DEBUG_OUT() << "Bitwise simplify: '" << original << "' -> '"
+                    << inst->toString() << "'" << std::endl;
     };
 
     auto emitMovFrom = [&](MachineOperand* src) {
@@ -617,17 +656,17 @@ void ConstantFolding::bitwiseOperationSimplify(Instruction* inst,
         auto srcClone = cloneReg(src);
         inst->clearOperands();
         inst->setOpcode(Opcode::ADDI);
-        inst->addOperand(std::move(rdClone));
-        inst->addOperand(std::move(srcClone));
-        inst->addOperand(std::make_unique<ImmediateOperand>(0));
+        inst->addOperand_(std::move(rdClone));
+        inst->addOperand_(std::move(srcClone));
+        inst->addOperand_(std::make_unique<ImmediateOperand>(0));
         auto it = virtualRegisterConstants.find(srcNum);
         if (it != virtualRegisterConstants.end()) {
             mapRegToConstant(rdNum, it->second);
         } else {
             virtualRegisterConstants.erase(rdNum);
         }
-        std::cout << "Bitwise simplify: '" << original << "' -> '"
-                  << inst->toString() << "'" << std::endl;
+        DEBUG_OUT() << "Bitwise simplify: '" << original << "' -> '"
+                    << inst->toString() << "'" << std::endl;
     };
 
     auto emitNotFrom = [&](MachineOperand* src) {
@@ -639,8 +678,8 @@ void ConstantFolding::bitwiseOperationSimplify(Instruction* inst,
         auto srcClone = cloneReg(src);
         inst->clearOperands();
         inst->setOpcode(Opcode::NOT);  // 伪指令：后续可降为 XORI rd, rs, -1
-        inst->addOperand(std::move(rdClone));
-        inst->addOperand(std::move(srcClone));
+        inst->addOperand_(std::move(rdClone));
+        inst->addOperand_(std::move(srcClone));
         auto it = virtualRegisterConstants.find(srcNum);
         if (it != virtualRegisterConstants.end()) {
             int32_t v = static_cast<int32_t>(it->second);
@@ -649,8 +688,8 @@ void ConstantFolding::bitwiseOperationSimplify(Instruction* inst,
         } else {
             virtualRegisterConstants.erase(rdNum);
         }
-        std::cout << "Bitwise simplify: '" << original << "' -> '"
-                  << inst->toString() << "'" << std::endl;
+        DEBUG_OUT() << "Bitwise simplify: '" << original << "' -> '"
+                    << inst->toString() << "'" << std::endl;
     };
 
     auto constVal1 = getConstant(*op1);
@@ -762,9 +801,9 @@ void ConstantFolding::mvToAddiw(Instruction* inst, BasicBlock* parent_bb) {
 
     inst->clearOperands();
     inst->setOpcode(ADDIW);
-    inst->addOperand(std::move(dest_op));
-    inst->addOperand(std::move(src_op));
-    inst->addOperand(std::make_unique<ImmediateOperand>(0));
+    inst->addOperand_(std::move(dest_op));
+    inst->addOperand_(std::move(src_op));
+    inst->addOperand_(std::make_unique<ImmediateOperand>(0));
 }
 
 void ConstantFolding::instructionReassociateAndCombine(Instruction* inst,
@@ -817,14 +856,47 @@ void ConstantFolding::instructionReassociateAndCombine(Instruction* inst,
 
             inst->clearOperands();
             // inst->setOpcode(inst->getOpcode() == ADDI ? ADDI : ADDIW);
-            inst->addOperand(std::move(dest_clone));
-            inst->addOperand(std::move(new_src));
-            inst->addOperand(std::make_unique<ImmediateOperand>(new_imm_val));
-            std::cout << "Reassociate and combine: '" << original << "' -> '"
-                      << inst->toString() << "'" << std::endl;
+            inst->addOperand_(std::move(dest_clone));
+            inst->addOperand_(std::move(new_src));
+            inst->addOperand_(std::make_unique<ImmediateOperand>(new_imm_val));
+            DEBUG_OUT() << "Reassociate and combine: '" << original << "' -> '"
+                        << inst->toString() << "'" << std::endl;
         }
 
     } else if (inst->getOpcode() == MUL || inst->getOpcode() == MULW) {
+    }
+}
+
+void ConstantFolding::useZeroReg(Instruction* inst, BasicBlock* parent_bb) {
+    if (inst->getOprandCount() == 0) {
+        return;
+    }
+
+    if (inst->getOpcode() == BNEZ) {
+        auto a = 1;  // breakpoint
+    }
+
+    if (inst->getOpcode() == LI && inst->getOperand(1)->getValue() == 0 &&
+        inst->getOperand(0)->getRegNum() >= 100) {
+        mapRegToConstant(inst->getOperand(0)->getRegNum(), 0);
+        // 防止同一条指令被加入多次
+        if (std::find(instructionsToRemove.begin(), instructionsToRemove.end(),
+                      inst) == instructionsToRemove.end()) {
+            // instructionsToRemove.push_back(inst);
+        }
+        return;
+    }
+
+    // 遍历寄存器操作数，判断是否为 0
+    for (size_t i = 0; i < inst->getOprandCount(); ++i) {
+        auto* operand = inst->getOperand(i);
+        if (operand->isReg() && (getConstant(*operand).value_or(-1) == 0) &&
+            (operand->getRegNum() != 0)) {
+            DEBUG_OUT() << "Found reg value 0 in instruction: '"
+                        << inst->toString() << "', replace "
+                        << operand->toString() << " to zero." << std::endl;
+            inst->setOperand(i, std::make_unique<RegisterOperand>("zero"));
+        }
     }
 }
 
@@ -848,6 +920,13 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
 
     switch (op) {
         // Binary arithmetic (signed) wrap in 32-bit
+        case Opcode::MV: {
+            if (source_operands.size() != 1) {
+                return std::nullopt;  // MV should have one source operand
+            }
+            int32_t value = as_i32(source_operands[0]);
+            return value;
+        }
         case Opcode::ADD:
         case Opcode::ADDW:
         case Opcode::ADDI:
@@ -857,8 +936,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             int32_t b = as_i32(source_operands[1]);
             auto result = sign_extend_i32(static_cast<int64_t>(a) +
                                           static_cast<int64_t>(b));
-            std::cout << "Calculate Inst value: " << a << " + " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " + " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::SUB:
@@ -868,8 +947,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             int32_t b = as_i32(source_operands[1]);
             auto result = sign_extend_i32(static_cast<int64_t>(a) -
                                           static_cast<int64_t>(b));
-            std::cout << "Calculate Inst value: " << a << " - " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " - " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::MUL:
@@ -879,8 +958,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             int32_t b = as_i32(source_operands[1]);
             auto result = sign_extend_i32(static_cast<int64_t>(a) *
                                           static_cast<int64_t>(b));
-            std::cout << "Calculate Inst value: " << a << " * " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " * " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::DIV:
@@ -892,8 +971,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             if (a == std::numeric_limits<int32_t>::min() && b == -1)
                 return std::nullopt;  // avoid overflow UB
             auto result = sign_extend_i32(static_cast<int64_t>(a / b));
-            std::cout << "Calculate Inst value: " << a << " / " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " / " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::DIVU:
@@ -904,8 +983,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             if (b == 0) return std::nullopt;
             auto result = sign_extend_i32(
                 static_cast<int64_t>(static_cast<int32_t>(a / b)));
-            std::cout << "Calculate Inst value: " << a << " /u " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " /u " << b
+                        << " -> " << result << std::endl;
             return result;
         }
         case Opcode::REM:
@@ -917,13 +996,13 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             if (a == std::numeric_limits<int32_t>::min() && b == -1) {
                 auto result =
                     sign_extend_i32(0);  // per RISC-V spec rem of this is 0
-                std::cout << "Calculate Inst value: " << a << " % " << b
-                          << " (special) -> " << result << std::endl;
+                DEBUG_OUT() << "Calculate Inst value: " << a << " % " << b
+                            << " (special) -> " << result << std::endl;
                 return result;
             }
             auto result = sign_extend_i32(static_cast<int64_t>(a % b));
-            std::cout << "Calculate Inst value: " << a << " % " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " % " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::REMU:
@@ -934,8 +1013,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             if (b == 0) return std::nullopt;
             auto result = sign_extend_i32(
                 static_cast<int64_t>(static_cast<int32_t>(a % b)));
-            std::cout << "Calculate Inst value: " << a << " %u " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " %u " << b
+                        << " -> " << result << std::endl;
             return result;
         }
 
@@ -946,8 +1025,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             int32_t a = as_i32(source_operands[0]);
             int32_t b = as_i32(source_operands[1]);
             auto result = sign_extend_i32(a & b);
-            std::cout << "Calculate Inst value: " << a << " & " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " & " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::OR:
@@ -956,8 +1035,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             int32_t a = as_i32(source_operands[0]);
             int32_t b = as_i32(source_operands[1]);
             auto result = sign_extend_i32(a | b);
-            std::cout << "Calculate Inst value: " << a << " | " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " | " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::XOR:
@@ -966,8 +1045,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             int32_t a = as_i32(source_operands[0]);
             int32_t b = as_i32(source_operands[1]);
             auto result = sign_extend_i32(a ^ b);
-            std::cout << "Calculate Inst value: " << a << " ^ " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " ^ " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::SLL:
@@ -980,8 +1059,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
                 static_cast<uint32_t>(as_i32(source_operands[1])) & 31u;
             auto result = sign_extend_i32(
                 static_cast<int64_t>(static_cast<int32_t>(a << sh)));
-            std::cout << "Calculate Inst value: " << a << " << " << sh << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " << " << sh
+                        << " -> " << result << std::endl;
             return result;
         }
         case Opcode::SRL:
@@ -994,8 +1073,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
                 static_cast<uint32_t>(as_i32(source_operands[1])) & 31u;
             auto result = sign_extend_i32(
                 static_cast<int64_t>(static_cast<int32_t>(a >> sh)));
-            std::cout << "Calculate Inst value: " << a << " >>u " << sh
-                      << " -> " << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " >>u " << sh
+                        << " -> " << result << std::endl;
             return result;
         }
         case Opcode::SRA:
@@ -1007,8 +1086,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             uint32_t sh =
                 static_cast<uint32_t>(as_i32(source_operands[1])) & 31u;
             auto result = sign_extend_i32(static_cast<int64_t>(a >> sh));
-            std::cout << "Calculate Inst value: " << a << " >> " << sh << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " >> " << sh
+                        << " -> " << result << std::endl;
             return result;
         }
 
@@ -1019,8 +1098,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             int32_t a = as_i32(source_operands[0]);
             int32_t b = as_i32(source_operands[1]);
             auto result = static_cast<int64_t>(a < b ? 1 : 0);
-            std::cout << "Calculate Inst value: " << a << " < " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " < " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::SGT: {  // pseudo >
@@ -1028,8 +1107,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             int32_t a = as_i32(source_operands[0]);
             int32_t b = as_i32(source_operands[1]);
             auto result = static_cast<int64_t>(a > b ? 1 : 0);
-            std::cout << "Calculate Inst value: " << a << " > " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " > " << b << " -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::SLTU:
@@ -1038,8 +1117,8 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             uint32_t a = static_cast<uint32_t>(as_i32(source_operands[0]));
             uint32_t b = static_cast<uint32_t>(as_i32(source_operands[1]));
             auto result = static_cast<int64_t>(a < b ? 1 : 0);
-            std::cout << "Calculate Inst value: " << a << " <u " << b << " -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: " << a << " <u " << b
+                        << " -> " << result << std::endl;
             return result;
         }
 
@@ -1051,48 +1130,48 @@ std::optional<int64_t> ConstantFolding::calculateInstructionValue(
             // Avoid overflow case -INT32_MIN (leave for later lowering)
             if (a == std::numeric_limits<int32_t>::min()) return std::nullopt;
             auto result = sign_extend_i32(-a);
-            std::cout << "Calculate Inst value: -" << a << " -> " << result
-                      << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: -" << a << " -> " << result
+                        << std::endl;
             return result;
         }
         case Opcode::NOT: {
             if (!needN(1)) return std::nullopt;
             int32_t a = as_i32(source_operands[0]);
             auto result = sign_extend_i32(~a);
-            std::cout << "Calculate Inst value: ~" << a << " -> " << result
-                      << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: ~" << a << " -> " << result
+                        << std::endl;
             return result;
         }
         case Opcode::SEQZ: {
             if (!needN(1)) return std::nullopt;
             int32_t a = as_i32(source_operands[0]);
             auto result = static_cast<int64_t>(a == 0 ? 1 : 0);
-            std::cout << "Calculate Inst value: (" << a << " == 0) -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: (" << a << " == 0) -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::SNEZ: {
             if (!needN(1)) return std::nullopt;
             int32_t a = as_i32(source_operands[0]);
             auto result = static_cast<int64_t>(a != 0 ? 1 : 0);
-            std::cout << "Calculate Inst value: (" << a << " != 0) -> "
-                      << result << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: (" << a << " != 0) -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::SLTZ: {
             if (!needN(1)) return std::nullopt;
             int32_t a = as_i32(source_operands[0]);
             auto result = static_cast<int64_t>(a < 0 ? 1 : 0);
-            std::cout << "Calculate Inst value: (" << a << " < 0) -> " << result
-                      << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: (" << a << " < 0) -> "
+                        << result << std::endl;
             return result;
         }
         case Opcode::SGTZ: {
             if (!needN(1)) return std::nullopt;
             int32_t a = as_i32(source_operands[0]);
             auto result = static_cast<int64_t>(a > 0 ? 1 : 0);
-            std::cout << "Calculate Inst value: (" << a << " > 0) -> " << result
-                      << std::endl;
+            DEBUG_OUT() << "Calculate Inst value: (" << a << " > 0) -> "
+                        << result << std::endl;
             return result;
         }
 

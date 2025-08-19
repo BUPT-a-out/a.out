@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "IR/Type.h"
 #include "MachineOperand.h"
 
 namespace riscv64 {
@@ -201,23 +202,50 @@ enum Opcode {
 
     // 特殊控制流伪指令
     COPY,  // 表示约束“这个虚拟寄存器的值，必须被放入那个特定的物理寄存器中”
-    FRAMEADDR   // 获取当前栈帧的地址，需要后期处理，参数为 rd 和 rs
+    FRAMEADDR  // 获取当前栈帧的地址，需要后期处理，参数为 rd 和 rs
 };
 using DestSourcePair = std::pair<MachineOperand*, MachineOperand*>;
 
-class Instruction {
+inline auto getContext() {
+    static const auto context = std::make_unique<midend::Context>();
+    return context.get();
+}
+
+inline auto getVoidType() { return getContext()->getVoidType(); }
+
+class Instruction : public midend::User {
    public:
-    explicit Instruction(Opcode op) : opcode(op) {}
+    explicit Instruction(Opcode op)
+        : midend::User(getVoidType(), midend::ValueKind::RISCVInstruction, 0),
+          opcode(op) {}
     explicit Instruction(Opcode op, BasicBlock* parent)
-        : opcode(op), parent(parent) {}
-    explicit Instruction(Opcode op, std::vector<std::unique_ptr<MachineOperand>>&& operands_vec, BasicBlock* parent = nullptr)
-    : opcode(op), operands(std::move(operands_vec)), parent(parent) {}
+        : midend::User(getVoidType(), midend::ValueKind::RISCVInstruction, 0),
+          opcode(op),
+          parent(parent) {}
+    explicit Instruction(
+        Opcode op, std::vector<std::unique_ptr<MachineOperand>>&& operands_vec,
+        BasicBlock* parent = nullptr)
+        : midend::User(getVoidType(), midend::ValueKind::RISCVInstruction, 0),
+          opcode(op),
+          operands(std::move(operands_vec)),
+          parent(parent) {}
 
     // 添加操作数
-    void addOperand(std::unique_ptr<MachineOperand> operand) {
+    void addOperand_(std::unique_ptr<MachineOperand> operand) {
         operands.push_back(std::move(operand));
+        this->addOperand(operand.get());
     }
-    void clearOperands() { operands.clear(); }
+    void clearOperands() {
+        operands.clear();
+        this->dropAllReferences();
+    }
+    void setOperand(size_t index, std::unique_ptr<MachineOperand> operand) {
+        if (index < operands.size()) {
+            operands[index] = std::move(operand);
+        } else {
+            throw std::out_of_range("Index out of range for operands");
+        }
+    }
 
     Opcode getOpcode() const { return opcode; }
     void setOpcode(Opcode new_opcode) { opcode = new_opcode; }

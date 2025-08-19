@@ -2,6 +2,14 @@
 
 #include "Instructions/All.h"
 
+// Debug output macro - only outputs when A_OUT_DEBUG is defined
+#ifdef A_OUT_DEBUG
+#define DEBUG_OUT() std::cout
+#else
+#define DEBUG_OUT() \
+    if constexpr (false) std::cout
+#endif
+
 namespace riscv64 {
 
 class ConstantFolding {
@@ -25,6 +33,7 @@ class ConstantFolding {
     void mvToAddiw(Instruction* inst, BasicBlock* parent_bb);
     void instructionReassociateAndCombine(Instruction* inst,
                                           BasicBlock* parent_bb);
+    void useZeroReg(Instruction* inst, BasicBlock* parent_bb);
 
     // 尝试常量传播
     void constantPropagate(Instruction* inst, BasicBlock* parent_bb);
@@ -41,8 +50,15 @@ class ConstantFolding {
     // 增添一条虚拟寄存器到常数值的映射
     void mapRegToConstant(unsigned int reg_num, int64_t value) {
         virtualRegisterConstants[reg_num] = value;
-        std::cout << "Mapped register " << reg_num << " to constant " << value
-                  << std::endl;
+        DEBUG_OUT() << "Mapped register " << reg_num << " to constant " << value
+                    << std::endl;
+    }
+
+    // 清除一条映射
+    void removeRegMap(unsigned int reg_num) {
+        if (virtualRegisterConstants.erase(reg_num)) {
+            DEBUG_OUT() << "Removed mapping for register " << reg_num << std::endl;
+        }
     }
 
    private:
