@@ -14,6 +14,7 @@
 #include "Pass/Analysis/AliasAnalysis.h"
 #include "Pass/Analysis/CallGraph.h"
 #include "Pass/Analysis/DominanceInfo.h"
+#include "Pass/Analysis/MemorySSA.h"
 #include "Support/Casting.h"
 
 constexpr bool GVN_DEBUG = false;
@@ -81,12 +82,16 @@ std::size_t GVNPass::ExpressionHash::operator()(const Expression& expr) const {
 }
 
 bool GVNPass::runOnFunction(Function& F, AnalysisManager& AM) {
+    if (F.isDeclaration()) {
+        return false;
+    }
     DI = AM.getAnalysis<DominanceInfo>("DominanceAnalysis", F);
     CG = AM.getAnalysis<CallGraph>("CallGraphAnalysis", *F.getParent());
     AA = AM.getAnalysis<AliasAnalysis::Result>("AliasAnalysis", F);
-    if (!AA || !DI || !CG) {
-        std::cerr << "Warning: GVNPass requires DominanceInfo, CallGraph, and "
-                     "AliasAnalysis. Skipping function "
+    MSSA = AM.getAnalysis<MemorySSA>("MemorySSAAnalysis", F);
+    if (!AA || !DI || !CG || !MSSA) {
+        std::cerr << "Warning: GVNPass requires DominanceInfo, CallGraph, "
+                     "AliasAnalysis, and MemorySSA. Skipping function "
                   << F.getName() << "." << std::endl;
         return false;
     }
@@ -273,6 +278,8 @@ bool GVNPass::isCommutative(unsigned opcode) {
 }
 
 bool GVNPass::eliminateRedundancy(Instruction* I, const Expression& expr) {
+    auto BB = I->getParent();
+
     // Check if expression already exists
     auto it = expressionToValueNumber.find(expr);
     if (it != expressionToValueNumber.end()) {
@@ -291,6 +298,24 @@ bool GVNPass::eliminateRedundancy(Instruction* I, const Expression& expr) {
                 }
             }
 
+            if (auto* CI = dyn_cast<CallInst>(I)) {
+                auto func = CI->getCalledFunction();
+                if (isPureFunction(func)) {
+                    goto replace_old;
+                }
+
+                auto requirements = CG->getRequiredValues(func);
+                if (auto* leaderInst = dyn_cast<Instruction>(leader)) {
+                    for (auto req : requirements) {
+                        if (hasInterveningStore(leaderInst, I, req)) {
+                            // If modified, do not eliminate
+                            goto record_new;
+                        }
+                    }
+                }
+            }
+
+        replace_old:
             if constexpr (GVN_DEBUG) {
                 std::cout << "GVN: Eliminated redundant instruction: "
                           << I->getName() << " with " << leader->getName()
@@ -306,8 +331,8 @@ record_new:
 
     unsigned vn = getValueNumber(I);
     expressionToValueNumber[expr] = vn;
-    blockInfoMap[I->getParent()].availableExpressions[expr] = vn;
-    blockInfoMap[I->getParent()].availableValues.insert(vn);
+    blockInfoMap[BB].availableExpressions[expr] = vn;
+    blockInfoMap[BB].availableValues.insert(vn);
 
     return false;
 }
@@ -401,6 +426,7 @@ bool GVNPass::eliminateLoadRedundancy(Instruction* Load) {
     return false;
 }
 
+// TODO: do something
 bool GVNPass::hasInterveningStore(Instruction* availLoad,
                                   Instruction* currentLoad, Value* ptr) {
     BasicBlock* availBB = availLoad->getParent();
@@ -426,8 +452,86 @@ bool GVNPass::hasInterveningStore(Instruction* availLoad,
         return false;
     }
 
-    // TODO: cross-block stores analysis should be handled by MemorySSA
-    return true;
+    // Use MemorySSA for cross-block stores analysis
+    if (!MSSA) {
+        return true;  // Conservative fallback
+    }
+
+    // Get the memory access for the current load
+    auto* currentMemAccess = MSSA->getMemoryAccess(currentLoad);
+    if (!currentMemAccess) {
+        return true;  // Conservative fallback
+    }
+
+    // Find the clobbering memory access for the current load
+    auto* clobberingAccess = MSSA->getClobberingMemoryAccess(currentMemAccess);
+    if (!clobberingAccess) {
+        return false;  // No clobbering access found
+    }
+
+    // Check if the available load is clobbered by any memory definition
+    // between the available load and current load
+    auto* availMemAccess = MSSA->getMemoryAccess(availLoad);
+    if (!availMemAccess) {
+        return true;  // Conservative fallback
+    }
+
+    // Walk the memory SSA chain to see if there's a clobber between
+    // the available load and current load
+    return walkMemorySSAForClobber(availMemAccess, currentMemAccess, ptr);
+}
+
+bool GVNPass::walkMemorySSAForClobber(MemoryAccess* availAccess,
+                                      MemoryAccess* currentAccess, Value* ptr) {
+    if (!availAccess || !currentAccess || !ptr) {
+        return true;  // Conservative fallback
+    }
+
+    // Find the clobbering access for the current load
+    auto* clobberingAccess = MSSA->getClobberingMemoryAccess(currentAccess);
+    if (!clobberingAccess) {
+        return false;  // No clobbering access
+    }
+
+    // Walk backwards from the clobbering access to see if it comes after
+    // the available load access
+    auto* currentClobber = clobberingAccess;
+    std::unordered_set<MemoryAccess*> visited;
+
+    while (currentClobber && visited.find(currentClobber) == visited.end()) {
+        visited.insert(currentClobber);
+
+        // If we reached the available access, there's no intervening store
+        if (currentClobber == availAccess) {
+            return false;
+        }
+
+        // If this is a memory def, check if it may clobber our pointer
+        if (auto* memDef = dyn_cast<MemoryDef>(currentClobber)) {
+            Instruction* defInst = memDef->getMemoryInst();
+
+            // If this def may modify our pointer location, it's a clobber
+            if (defInst && AA->mayModify(defInst, ptr)) {
+                return true;
+            }
+
+            // Move to the defining access
+            currentClobber = memDef->getDefiningAccess();
+        } else if (auto* memPhi = dyn_cast<MemoryPhi>(currentClobber)) {
+            // For phi nodes, conservatively check all incoming values
+            for (unsigned i = 0; i < memPhi->getNumIncomingValues(); ++i) {
+                auto* incomingAccess = memPhi->getIncomingValue(i);
+                if (walkMemorySSAForClobber(availAccess, incomingAccess, ptr)) {
+                    return true;
+                }
+            }
+            break;
+        } else {
+            break;
+        }
+    }
+
+    return false;  // No clobbering store found
 }
 
 Value* GVNPass::findAvailableLoad(Instruction* Load, BasicBlock* BB) {
@@ -484,16 +588,31 @@ bool GVNPass::processFunctionCall(Instruction* Call) {
     auto* CI = cast<CallInst>(Call);
     Function* callee = CI->getCalledFunction();
 
-    if (!callee || !isPureFunction(callee)) {
-        // Not pure - invalidate memory
-        for (auto& [BB, info] : blockInfoMap) {
-            info.availableLoads.clear();
+    auto affectedValue = CG->getAffectedValues(callee);
+
+    // It has side effect! Cannot reuse.
+    if (CG->hasSideEffects(callee) || !affectedValue.empty()) {
+        auto BB = Call->getParent();
+        auto& blockInfo = blockInfoMap[BB];
+        for (auto mod : affectedValue) {
+            auto newEnd = std::remove_if(
+                blockInfo.availableLoads.begin(),
+                blockInfo.availableLoads.end(),
+                [this, mod](const std::pair<Value*, Instruction*>& loadInfo) {
+                    if (!AA) return true;  // Conservative: invalidate all
+                    return AA->alias(loadInfo.first, mod) !=
+                           AliasAnalysis::AliasResult::NoAlias;
+                });
+            blockInfo.availableLoads.erase(newEnd,
+                                           blockInfo.availableLoads.end());
         }
         getValueNumber(CI);  // Still assign value number
         return false;
     }
 
-    // Pure function
+    // Pure function or
+    // non-pure, but only reads.
+    std::cout << callee->getNumArgs() << " may pure " << std::endl;
     Expression expr = createCallExpression(CI);
     if (eliminateRedundancy(CI, expr)) {
         numCallEliminated++;
