@@ -118,7 +118,9 @@
 #  endif
 # endif
 
-#include "y.tt
+#include "y.tab.h"
+/* Symbol kind.  */
+enum yysymbol_kind_t
 {
   YYSYMBOL_YYEMPTY = -2,
   YYSYMBOL_YYEOF = 0,                      /* "end of file"  */
@@ -1293,43 +1295,43 @@ yyreduce:
   switch (yyn)
     {
   case 2: /* file: CompUnit ENDMARKER  */
-#line 52 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 52 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                        { root = (yyvsp[-1].node); YYACCEPT; }
 #line 1301 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 3: /* CompUnit: %empty  */
-#line 56 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 56 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                 { (yyval.node) = create_ast_node(NODE_ROOT, NULL, yylineno, 0); }
 #line 1307 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 4: /* CompUnit: CompUnit Decl  */
-#line 57 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 57 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                     { shift_child((yyvsp[0].node), (yyvsp[-1].node)); free_ast((yyvsp[0].node)); (yyval.node) = (yyvsp[-1].node); }
 #line 1313 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 5: /* CompUnit: CompUnit FuncDef  */
-#line 58 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 58 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                        { add_child((yyvsp[-1].node), (yyvsp[0].node)); (yyval.node) = (yyvsp[-1].node); }
 #line 1319 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 6: /* Decl: ConstDecl  */
-#line 62 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 62 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
               { (yyval.node) = (yyvsp[0].node); }
 #line 1325 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 7: /* Decl: VarDecl  */
-#line 63 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 63 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
               { (yyval.node) = (yyvsp[0].node); }
 #line 1331 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 8: /* BType: INT  */
-#line 67 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 67 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
         {
         NodeData data;
         data.data_type = DATA_INT;
@@ -1340,7 +1342,7 @@ yyreduce:
     break;
 
   case 9: /* BType: FLOAT  */
-#line 73 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 73 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
             {
         NodeData data;
         data.data_type = DATA_FLOAT;
@@ -1351,7 +1353,7 @@ yyreduce:
     break;
 
   case 10: /* DimBrackets: '[' ']'  */
-#line 82 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 82 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
             {
         NodeData data;
         data.direct_int = 0;
@@ -1363,19 +1365,19 @@ yyreduce:
     break;
 
   case 11: /* DimBrackets: '[' Exp ']'  */
-#line 89 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 89 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                   { (yyval.node) = create_ast_node(NODE_LIST, "Dims", yylineno, 1, (yyvsp[-1].node)); }
 #line 1371 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 12: /* DimBrackets: DimBrackets '[' Exp ']'  */
-#line 90 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 90 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                               { add_child((yyvsp[-3].node), (yyvsp[-1].node)); (yyval.node) = (yyvsp[-3].node); }
 #line 1377 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 13: /* ConstDimBrackets: '[' ']'  */
-#line 94 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 94 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
             {
         NodeData data;
         data.direct_int = 0;
@@ -1387,25 +1389,25 @@ yyreduce:
     break;
 
   case 14: /* ConstDimBrackets: '[' ConstExp ']'  */
-#line 101 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 101 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                        { (yyval.node) = create_ast_node(NODE_LIST, "Dims", yylineno, 1, (yyvsp[-1].node)); }
 #line 1395 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 15: /* ConstDimBrackets: ConstDimBrackets '[' ConstExp ']'  */
-#line 102 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 102 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                         { add_child((yyvsp[-3].node), (yyvsp[-1].node)); (yyval.node) = (yyvsp[-3].node); }
 #line 1401 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 16: /* ConstDecl: ConstDefList ';'  */
-#line 106 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 106 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                      { (yyval.node) = (yyvsp[-1].node); }
 #line 1407 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 17: /* ConstDefList: CONST BType ConstDef  */
-#line 110 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 110 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                          {
         var_def((yyvsp[0].node), (yyvsp[-1].node)->data.data_type);
         (yyval.node) = create_ast_node(NODE_LIST, "ConstDefs", yylineno, 1, (yyvsp[0].node));
@@ -1414,7 +1416,7 @@ yyreduce:
     break;
 
   case 18: /* ConstDefList: ConstDefList ',' ConstDef  */
-#line 114 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 114 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                 {
         DataType data_type = DATA_INT;
         if ((yyvsp[-2].node)->children[0])
@@ -1428,7 +1430,7 @@ yyreduce:
     break;
 
   case 19: /* ConstDef: IDENTIFIER '=' ConstExp  */
-#line 126 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 126 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                             {
         (yyval.node) = create_ast_node(NODE_CONST_VAR_DEF, (yyvsp[-2].str), yylineno, 1, (yyvsp[0].node));
     }
@@ -1436,7 +1438,7 @@ yyreduce:
     break;
 
   case 20: /* ConstDef: IDENTIFIER ConstDimBrackets '=' '{' ConstInitValList '}'  */
-#line 129 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 129 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                                                {
         (yyval.node) = create_ast_node(NODE_CONST_ARRAY_DEF, (yyvsp[-5].str), yylineno, 2, (yyvsp[-4].node), (yyvsp[-1].node));
     }
@@ -1444,43 +1446,43 @@ yyreduce:
     break;
 
   case 21: /* ConstInitVal: ConstExp  */
-#line 135 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 135 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
              { (yyval.node) = (yyvsp[0].node); }
 #line 1452 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 22: /* ConstInitVal: '{' ConstInitValList '}'  */
-#line 136 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 136 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                { (yyval.node) = (yyvsp[-1].node); }
 #line 1458 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 23: /* ConstInitValList: %empty  */
-#line 140 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 140 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                 { (yyval.node) = create_ast_node(NODE_LIST, "ConstArrayIniter", yylineno, 0); }
 #line 1464 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 24: /* ConstInitValList: ConstInitVal  */
-#line 141 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 141 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                    { (yyval.node) = create_ast_node(NODE_LIST, "ConstArrayIniter", yylineno, 1, (yyvsp[0].node)); }
 #line 1470 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 25: /* ConstInitValList: ConstInitValList ',' ConstInitVal  */
-#line 142 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 142 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                         { add_child((yyvsp[-2].node), (yyvsp[0].node)); (yyval.node) = (yyvsp[-2].node); }
 #line 1476 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 26: /* VarDecl: VarDefList ';'  */
-#line 146 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 146 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                    { (yyval.node) = (yyvsp[-1].node); }
 #line 1482 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 27: /* VarDefList: BType VarDef  */
-#line 150 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 150 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                  {
         var_def((yyvsp[0].node), (yyvsp[-1].node)->data.data_type);
         (yyval.node) = create_ast_node(NODE_LIST, "VarDefs", yylineno, 1, (yyvsp[0].node));
@@ -1489,7 +1491,7 @@ yyreduce:
     break;
 
   case 28: /* VarDefList: VarDefList ',' VarDef  */
-#line 154 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 154 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                             {
         DataType data_type = DATA_INT;
         if ((yyvsp[-2].node)->children[0]) {
@@ -1504,19 +1506,19 @@ yyreduce:
     break;
 
   case 29: /* VarDef: IDENTIFIER  */
-#line 167 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 167 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                { (yyval.node) = create_ast_node(NODE_VAR_DEF, (yyvsp[0].str), yylineno, 0); }
 #line 1512 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 30: /* VarDef: IDENTIFIER '=' Exp  */
-#line 168 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 168 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                          { (yyval.node) = create_ast_node(NODE_VAR_DEF, (yyvsp[-2].str), yylineno, 1, (yyvsp[0].node)); }
 #line 1518 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 31: /* VarDef: IDENTIFIER ConstDimBrackets  */
-#line 169 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 169 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                   {
         (yyval.node) = create_ast_node(NODE_ARRAY_DEF, (yyvsp[-1].str), yylineno, 1, (yyvsp[0].node));
     }
@@ -1524,7 +1526,7 @@ yyreduce:
     break;
 
   case 32: /* VarDef: IDENTIFIER ConstDimBrackets '=' '{' InitValList '}'  */
-#line 172 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 172 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                                           {
         (yyval.node) = create_ast_node(NODE_ARRAY_DEF, (yyvsp[-5].str), yylineno, 2, (yyvsp[-4].node), (yyvsp[-1].node));
     }
@@ -1532,37 +1534,37 @@ yyreduce:
     break;
 
   case 33: /* InitVal: Exp  */
-#line 178 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 178 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
         { (yyval.node) = (yyvsp[0].node); }
 #line 1540 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 34: /* InitVal: '{' InitValList '}'  */
-#line 179 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 179 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                           { (yyval.node) = (yyvsp[-1].node); }
 #line 1546 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 35: /* InitValList: %empty  */
-#line 183 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 183 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                 { (yyval.node) = create_ast_node(NODE_LIST, "ArrayIniter", yylineno, 0); }
 #line 1552 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 36: /* InitValList: InitVal  */
-#line 184 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 184 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
               { (yyval.node) = create_ast_node(NODE_LIST, "ArrayIniter", yylineno, 1, (yyvsp[0].node)); }
 #line 1558 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 37: /* InitValList: InitValList ',' InitVal  */
-#line 185 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 185 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                               { add_child((yyvsp[-2].node), (yyvsp[0].node)); (yyval.node) = (yyvsp[-2].node); }
 #line 1564 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 38: /* FuncDef: FuncHead Block  */
-#line 189 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 189 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                    {
         add_child((yyvsp[-1].node), (yyvsp[0].node));
         (yyval.node) = (yyvsp[-1].node);
@@ -1573,7 +1575,7 @@ yyreduce:
     break;
 
   case 39: /* FuncHead: BType IDENTIFIER '(' FuncFParams ')'  */
-#line 198 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 198 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                          {
         (yyval.node) = function_def((yyvsp[-3].str), (yyvsp[-4].node)->data.data_type, (yyvsp[-1].node));
         if ((yyval.node)->data_type == NODEDATA_SYMB && (yyval.node)->data.symb_ptr)
@@ -1583,7 +1585,7 @@ yyreduce:
     break;
 
   case 40: /* FuncHead: VOID IDENTIFIER '(' FuncFParams ')'  */
-#line 203 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 203 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                           {
         (yyval.node) = function_def((yyvsp[-3].str), DATA_VOID, (yyvsp[-1].node));
         if ((yyval.node)->data_type == NODEDATA_SYMB && (yyval.node)->data.symb_ptr)
@@ -1593,25 +1595,25 @@ yyreduce:
     break;
 
   case 41: /* FuncFParams: %empty  */
-#line 211 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 211 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                 { (yyval.node) = create_ast_node(NODE_LIST, "FParams", yylineno, 0); }
 #line 1601 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 42: /* FuncFParams: FuncFParam  */
-#line 212 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 212 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                  { (yyval.node) = create_ast_node(NODE_LIST, "FParams", yylineno, 1, (yyvsp[0].node)); }
 #line 1607 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 43: /* FuncFParams: FuncFParams ',' FuncFParam  */
-#line 213 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 213 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                  { add_child((yyvsp[-2].node), (yyvsp[0].node)); (yyval.node) = (yyvsp[-2].node); }
 #line 1613 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 44: /* FuncFParam: BType IDENTIFIER  */
-#line 217 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 217 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                      {
         ASTNodePtr var_node = create_ast_node(NODE_VAR_DEF, (yyvsp[0].str), yylineno, 0);
         (yyval.node) = create_ast_node(NODE_LIST, "Param", yylineno, 2, (yyvsp[-1].node), var_node);
@@ -1620,7 +1622,7 @@ yyreduce:
     break;
 
   case 45: /* FuncFParam: BType IDENTIFIER ConstDimBrackets  */
-#line 221 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 221 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                         {
         ASTNodePtr var_node = create_ast_node(NODE_ARRAY_DEF, (yyvsp[-1].str), yylineno, 1, (yyvsp[0].node));
         (yyval.node) = create_ast_node(NODE_LIST, "Param", yylineno, 2, (yyvsp[-2].node), var_node);
@@ -1629,25 +1631,25 @@ yyreduce:
     break;
 
   case 46: /* BlockEnter: '{'  */
-#line 228 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 228 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
         { enter_scope(); }
 #line 1637 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 47: /* BlockItem: %empty  */
-#line 232 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 232 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                  { (yyval.node) = create_ast_node(NODE_LIST, "Block", yylineno, 0); }
 #line 1643 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 48: /* BlockItem: BlockItem Decl  */
-#line 233 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 233 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                      { shift_child((yyvsp[0].node), (yyvsp[-1].node)); free_ast((yyvsp[0].node)); (yyval.node) = (yyvsp[-1].node); }
 #line 1649 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 49: /* BlockItem: BlockItem Stmt  */
-#line 234 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 234 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                      {
         if ((yyvsp[0].node)->node_type == NODE_LIST) {
             if ((yyvsp[0].node)->child_count) add_child((yyvsp[-1].node), (yyvsp[0].node));
@@ -1658,37 +1660,37 @@ yyreduce:
     break;
 
   case 50: /* Block: BlockEnter BlockItem '}'  */
-#line 243 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 243 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                              { (yyval.node) = (yyvsp[-1].node); exit_scope(); }
 #line 1666 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 51: /* Stmt: LVal '=' Exp ';'  */
-#line 247 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 247 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                      { (yyval.node) = create_ast_node(NODE_ASSIGN_STMT, NULL, yylineno, 2, (yyvsp[-3].node), (yyvsp[-1].node)); }
 #line 1672 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 52: /* Stmt: Exp ';'  */
-#line 248 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 248 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
               { (yyval.node) = (yyvsp[-1].node); }
 #line 1678 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 53: /* Stmt: Block  */
-#line 249 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 249 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
             { (yyval.node) = (yyvsp[0].node); }
 #line 1684 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 54: /* Stmt: ';'  */
-#line 250 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 250 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
           { (yyval.node) = create_ast_node(NODE_LIST, "Empty", yylineno, 0); }
 #line 1690 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 55: /* Stmt: IF '(' Cond ')' Stmt  */
-#line 251 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 251 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                            {
         ASTNodePtr if_2;
         NodeData foo;
@@ -1702,7 +1704,7 @@ yyreduce:
     break;
 
   case 56: /* Stmt: IF '(' Cond ')' Stmt ELSE Stmt  */
-#line 260 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 260 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                      {
         ASTNodePtr if_2, if_3;
         NodeData foo;
@@ -1720,7 +1722,7 @@ yyreduce:
     break;
 
   case 57: /* Stmt: WHILE '(' Cond ')' Stmt  */
-#line 273 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 273 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                               {
         ASTNodePtr while_2;
         NodeData foo;
@@ -1734,19 +1736,19 @@ yyreduce:
     break;
 
   case 58: /* Stmt: BREAK ';'  */
-#line 282 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 282 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                 { (yyval.node) = create_ast_node(NODE_BREAK_STMT, NULL, yylineno, 0); }
 #line 1742 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 59: /* Stmt: CONTINUE ';'  */
-#line 283 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 283 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                    { (yyval.node) = create_ast_node(NODE_CONTINUE_STMT, NULL, yylineno, 0); }
 #line 1748 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 60: /* Stmt: RETURN ';'  */
-#line 284 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 284 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                  {
         NodeData data;
         data.symb_ptr = get_current_function_scope();
@@ -1757,7 +1759,7 @@ yyreduce:
     break;
 
   case 61: /* Stmt: RETURN Exp ';'  */
-#line 290 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 290 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                      {
         NodeData data;
         data.symb_ptr = get_current_function_scope();
@@ -1768,25 +1770,25 @@ yyreduce:
     break;
 
   case 62: /* Cond: LOrExp  */
-#line 299 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 299 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
            { (yyval.node) = (yyvsp[0].node); }
 #line 1776 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 63: /* Exp: AddExp  */
-#line 303 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 303 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
            { (yyval.node) = (yyvsp[0].node); }
 #line 1782 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 64: /* ConstExp: AddExp  */
-#line 307 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 307 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
            { (yyval.node) = (yyvsp[0].node); }
 #line 1788 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 65: /* LVal: IDENTIFIER  */
-#line 311 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 311 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                {
         SymbolPtr sym = lookup_symbol((yyvsp[0].str));
         NodeData data;
@@ -1819,7 +1821,7 @@ yyreduce:
     break;
 
   case 66: /* LVal: IDENTIFIER DimBrackets  */
-#line 339 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 339 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                              {
         SymbolPtr sym = lookup_symbol((yyvsp[-1].str));
         NodeData data;
@@ -1848,7 +1850,7 @@ yyreduce:
     break;
 
   case 67: /* LVal: STRING_CONST  */
-#line 363 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 363 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                    {
         NodeData data;
         data.direct_str = (yyvsp[0].str);
@@ -1859,25 +1861,25 @@ yyreduce:
     break;
 
   case 68: /* PrimaryExp: LVal  */
-#line 372 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 372 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
          { (yyval.node) = get_const_value((yyvsp[0].node)); }
 #line 1867 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 69: /* PrimaryExp: '(' Exp ')'  */
-#line 373 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 373 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                   { (yyval.node) = (yyvsp[-1].node); }
 #line 1873 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 70: /* PrimaryExp: Number  */
-#line 374 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 374 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
              { (yyval.node) = (yyvsp[0].node); }
 #line 1879 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 71: /* Number: INT_CONST  */
-#line 378 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 378 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
               {
         NodeData data;
         data.direct_int = (int)strtol((yyvsp[0].str), NULL, 0);
@@ -1888,7 +1890,7 @@ yyreduce:
     break;
 
   case 72: /* Number: FLOAT_CONST  */
-#line 384 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 384 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                   {
         NodeData data;
         data.direct_float = (float)strtof((yyvsp[0].str), NULL);
@@ -1899,13 +1901,13 @@ yyreduce:
     break;
 
   case 73: /* UnaryExp: PrimaryExp  */
-#line 393 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 393 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                { (yyval.node) = (yyvsp[0].node); }
 #line 1907 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 74: /* UnaryExp: UnaryOp UnaryExp  */
-#line 394 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 394 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                        {
         NodeData data;
         set_ast_node_data((yyvsp[-1].node), HOLD_NODETYPE, NULL, data, HOLD_NODEDATATYPE, yylineno);
@@ -1916,7 +1918,7 @@ yyreduce:
     break;
 
   case 75: /* UnaryExp: IDENTIFIER '(' FuncRParams ')'  */
-#line 400 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 400 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                                      {
         SymbolPtr sym = lookup_symbol((yyvsp[-3].str));
         NodeData data;
@@ -1945,49 +1947,49 @@ yyreduce:
     break;
 
   case 76: /* UnaryOp: '+'  */
-#line 427 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 427 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
         { (yyval.node) = create_ast_node(NODE_UNARY_OP, "+", yylineno, 0); }
 #line 1953 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 77: /* UnaryOp: '-'  */
-#line 428 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 428 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
           { (yyval.node) = create_ast_node(NODE_UNARY_OP, "-", yylineno, 0); }
 #line 1959 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 78: /* UnaryOp: '!'  */
-#line 429 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 429 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
           { (yyval.node) = create_ast_node(NODE_UNARY_OP, "!", yylineno, 0); }
 #line 1965 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 79: /* FuncRParams: %empty  */
-#line 433 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 433 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                 { (yyval.node) = create_ast_node(NODE_LIST, "RParams", yylineno, 0); }
 #line 1971 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 80: /* FuncRParams: Exp  */
-#line 434 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 434 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
           { (yyval.node) = create_ast_node(NODE_LIST, "RParams", yylineno, 1, (yyvsp[0].node)); }
 #line 1977 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 81: /* FuncRParams: FuncRParams ',' Exp  */
-#line 435 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 435 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                           { add_child((yyvsp[-2].node), (yyvsp[0].node)); (yyval.node) = (yyvsp[-2].node); }
 #line 1983 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 82: /* MulExp: UnaryExp  */
-#line 439 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 439 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
              { (yyval.node) = (yyvsp[0].node); }
 #line 1989 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 83: /* MulExp: MulExp '*' UnaryExp  */
-#line 440 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 440 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                           {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "*", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -1996,7 +1998,7 @@ yyreduce:
     break;
 
   case 84: /* MulExp: MulExp '/' UnaryExp  */
-#line 444 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 444 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                           {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "/", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2005,7 +2007,7 @@ yyreduce:
     break;
 
   case 85: /* MulExp: MulExp '%' UnaryExp  */
-#line 448 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 448 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                           {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "%", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2014,13 +2016,13 @@ yyreduce:
     break;
 
   case 86: /* AddExp: MulExp  */
-#line 455 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 455 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
            { (yyval.node) = (yyvsp[0].node); }
 #line 2022 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 87: /* AddExp: AddExp '+' MulExp  */
-#line 456 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 456 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                         {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "+", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2029,7 +2031,7 @@ yyreduce:
     break;
 
   case 88: /* AddExp: AddExp '-' MulExp  */
-#line 460 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 460 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                         {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "-", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2038,13 +2040,13 @@ yyreduce:
     break;
 
   case 89: /* RelExp: AddExp  */
-#line 467 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 467 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
            { (yyval.node) = (yyvsp[0].node); }
 #line 2046 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 90: /* RelExp: RelExp '<' AddExp  */
-#line 468 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 468 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                         {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "<", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2053,7 +2055,7 @@ yyreduce:
     break;
 
   case 91: /* RelExp: RelExp '>' AddExp  */
-#line 472 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 472 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                         {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, ">", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2062,7 +2064,7 @@ yyreduce:
     break;
 
   case 92: /* RelExp: RelExp LEQUAL AddExp  */
-#line 476 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 476 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                            {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "<=", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2071,7 +2073,7 @@ yyreduce:
     break;
 
   case 93: /* RelExp: RelExp GEQUAL AddExp  */
-#line 480 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 480 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                            {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, ">=", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2080,13 +2082,13 @@ yyreduce:
     break;
 
   case 94: /* EqExp: RelExp  */
-#line 487 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 487 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
            { (yyval.node) = (yyvsp[0].node); }
 #line 2088 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 95: /* EqExp: EqExp EQUAL RelExp  */
-#line 488 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 488 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                          {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "==", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2095,7 +2097,7 @@ yyreduce:
     break;
 
   case 96: /* EqExp: EqExp NEQUAL RelExp  */
-#line 492 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 492 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                           {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "!=", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2104,13 +2106,13 @@ yyreduce:
     break;
 
   case 97: /* LAndExp: EqExp  */
-#line 499 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 499 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
           { (yyval.node) = (yyvsp[0].node); }
 #line 2112 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 98: /* LAndExp: LAndExp AND EqExp  */
-#line 500 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 500 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                         {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "&&", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2119,13 +2121,13 @@ yyreduce:
     break;
 
   case 99: /* LOrExp: LAndExp  */
-#line 507 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 507 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
             { (yyval.node) = (yyvsp[0].node); }
 #line 2127 "/home/runner/work/compiler/compiler/compiler/modules/frontend/src/sy_parser/y.tab.c"
     break;
 
   case 100: /* LOrExp: LOrExp OR LAndExp  */
-#line 508 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 508 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
                         {
         (yyval.node) = create_ast_node(NODE_BINARY_OP, "||", yylineno, 2, (yyvsp[-2].node), (yyvsp[0].node));
         (yyval.node) = fold_binary_exp((yyval.node));
@@ -2327,7 +2329,7 @@ yyreturnlab:
   return yyresult;
 }
 
-#line 514 "modules/frontend/flex_yacc/sysy_yacc.y"
+#line 514 "/home/runner/work/compiler/compiler/compiler/modules/frontend/flex_yacc/sysy_yacc.y"
 
 
 void yyerror(const char *s) {
@@ -2569,125 +2571,6 @@ ASTNodePtr fold_unary_exp(ASTNodePtr node) {
     }
 
     return node;
-}
-
-ASTNodePtr fold_binary_exp(ASTNodePtr node) {
-    ASTNodePtr lhs, rhs;
-    ASTNodePtr folded;
-    NodeData data;
-    int is_float, valid;
-    int l_int_val = 0, r_int_val = 0, int_result = 0;
-    float l_float_val = 0.0, r_float_val = 0.0, float_result = 0.0;
-
-    if (!node) return node;
-    if (node->node_type != NODE_BINARY_OP) return node;
-
-    lhs = node->children[0];
-    rhs = node->children[1];
-    // 只处理左右都是常量的情况
-    if (lhs && rhs && lhs->node_type == NODE_CONST && rhs->node_type == NODE_CONST) {
-        is_float = (lhs->data_type == NODEDATA_FLOAT || rhs->data_type == NODEDATA_FLOAT);
-        if (lhs->data_type == NODEDATA_FLOAT) {
-            l_int_val = (int)lhs->data.direct_float;
-            l_float_val = lhs->data.direct_float;
-        } else {
-            l_int_val = lhs->data.direct_int;
-            l_float_val = (float)lhs->data.direct_int;
-        }
-        if (rhs->data_type == NODEDATA_FLOAT) {
-            r_int_val = (int)rhs->data.direct_float;
-            r_float_val = rhs->data.direct_float;
-        } else {
-            r_int_val = rhs->data.direct_int;
-            r_float_val = (float)rhs->data.direct_int;
-        }
-        valid = 1;
-        if (strcmp(node->name, "+") == 0) {
-            int_result = l_int_val + r_int_val;
-            float_result = l_float_val + r_float_val;
-        } else if (strcmp(node->name, "-") == 0) {
-            int_result = l_int_val - r_int_val;
-            float_result = l_float_val - r_float_val;
-        } else if (strcmp(node->name, "*") == 0) {
-            int_result = l_int_val * r_int_val;
-            float_result = l_float_val * r_float_val;
-        } else if (strcmp(node->name, "/") == 0) {
-            if (is_float) {
-                if (r_float_val == 0) valid = 0;
-                else float_result = l_float_val / r_float_val;
-            } else {
-                if (r_int_val == 0) valid = 0;
-                else int_result = l_int_val / r_int_val;
-            }
-        } else if (strcmp(node->name, "%") == 0) {
-            if (!is_float && r_int_val != 0)  {
-                int_result = l_int_val % r_int_val;
-            } else valid = 0;
-        } else if (strcmp(node->name, "<") == 0) {
-            if (is_float)
-                int_result = l_float_val < r_float_val;
-            else
-                int_result = l_int_val < r_int_val;
-            is_float = 0;
-        } else if (strcmp(node->name, ">") == 0) {
-            if (is_float)
-                int_result = l_float_val > r_float_val;
-            else
-                int_result = l_int_val > r_int_val;
-            is_float = 0;
-        } else if (strcmp(node->name, "<=") == 0) {
-            if (is_float)
-                int_result = l_float_val <= r_float_val;
-            else
-                int_result = l_int_val <= r_int_val;
-            is_float = 0;
-        } else if (strcmp(node->name, ">=") == 0) {
-            if (is_float)
-                int_result = l_float_val >= r_float_val;
-            else
-                int_result = l_int_val >= r_int_val;
-            is_float = 0;
-        } else if (strcmp(node->name, "==") == 0) {
-            if (is_float)
-                int_result = l_float_val == r_float_val;
-            else
-                int_result = l_int_val == r_int_val;
-            is_float = 0;
-        } else if (strcmp(node->name, "!=") == 0) {
-            if (is_float)
-                int_result = l_float_val != r_float_val;
-            else
-                int_result = l_int_val != r_int_val;
-            is_float = 0;
-        } else if (strcmp(node->name, "&&") == 0) {
-            if (is_float)
-                int_result = l_float_val && r_float_val;
-            else
-                int_result = l_int_val && r_int_val;
-            is_float = 0;
-        } else if (strcmp(node->name, "||") == 0) {
-            if (is_float)
-                int_result = l_float_val || r_float_val;
-            else
-                int_result = l_int_val || r_int_val;
-            is_float = 0;
-        } else valid = 0;
-        if (valid) {
-            folded = create_ast_node(NODE_CONST, NULL, node->lineno, 0);
-            if (is_float) {
-                data.direct_float = float_result;
-                set_ast_node_data(folded, HOLD_NODETYPE, NULL, data, NODEDATA_FLOAT, -1);
-            } else {
-                data.direct_int = int_result;
-                set_ast_node_data(folded, HOLD_NODETYPE, NULL, data, NODEDATA_INT, -1);
-            }
-            return folded;
-        }
-    }
-
-    return node;
-}
-  return node;
 }
 
 ASTNodePtr fold_binary_exp(ASTNodePtr node) {
