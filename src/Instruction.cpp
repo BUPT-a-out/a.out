@@ -52,11 +52,6 @@ bool Instruction::isJumpInstr() const {
            opcode == RET;
 }
 
-// note: only int32/64 store/load
-bool Instruction::isMemoryInstr() const {
-    return opcode == Opcode::SW || opcode == Opcode::LW || opcode == Opcode::SD || opcode == Opcode::LD;
-}
-
 bool Instruction::isTerminator() const {
     return opcode == Opcode::J || opcode == Opcode::JAL ||
            opcode == Opcode::JALR || opcode == Opcode::BNEZ ||
@@ -286,9 +281,6 @@ bool Instruction::isReturnInstr() const {
 // 获取使用的整数寄存器
 std::vector<unsigned> Instruction::getUsedIntegerRegs() const {
     std::vector<unsigned> usedRegs;
-    if (opcode == RET) {
-        usedRegs.push_back(10);
-    }
     if (operands.empty()) return usedRegs;
 
     switch (opcode) {
@@ -348,9 +340,6 @@ std::vector<unsigned> Instruction::getUsedIntegerRegs() const {
             }
             break;
         }
-
-        case LI:
-            break;
 
         // 加载指令：LD rd, offset(rs1) - 使用rs1作为基址寄存器
         case LD:
@@ -459,16 +448,9 @@ std::vector<unsigned> Instruction::getUsedIntegerRegs() const {
             break;
         }
 
-        case CALL: {
-            for (int i = 10; i <= 17; i++) {
-                usedRegs.push_back(i);
-            }
-            break;
-        }
-
         default: {
             if (isCallInstr()) {
-                // 函数调用的特殊处理, incorrect
+                // 函数调用的特殊处理
                 for (size_t i = 0; i < operands.size(); ++i) {
                     if (operands[i]->isReg() &&
                         operands[i]->isIntegerRegister()) {
@@ -516,9 +498,6 @@ std::vector<unsigned> Instruction::getUsedIntegerRegs() const {
 // 获取使用的浮点寄存器
 std::vector<unsigned> Instruction::getUsedFloatRegs() const {
     std::vector<unsigned> usedRegs;
-    if (opcode == RET) {
-        usedRegs.push_back(42);
-    }
     if (operands.empty()) return usedRegs;
 
     switch (opcode) {
@@ -642,12 +621,6 @@ std::vector<unsigned> Instruction::getUsedFloatRegs() const {
             break;
         }
 
-        case CALL: {
-            for (int i = 42; i <= 49; i++) {
-                usedRegs.push_back(i);
-            }
-        }
-
         default: {
             // 通用策略：检查所有操作数中的浮点寄存器（排除第一个操作数，通常是目标）
             for (size_t i = 1; i < operands.size(); ++i) {
@@ -705,7 +678,6 @@ std::vector<unsigned> Instruction::getDefinedIntegerRegs() const {
         case LUI:
         case AUIPC:
         case MV:
-        case LI:
         case LA:
         case FRAMEADDR:
         case REM:

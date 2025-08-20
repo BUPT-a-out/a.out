@@ -32,15 +32,15 @@ class DeadCodeElimination {
     };
 
     // Run DCE on a function. Returns true if any instruction removed.
-    bool runOnFunction(Function* func, bool forPhys);
+    bool runOnFunction(Function* func);
 
    private:
     // Phase 1: build per-basic-block def/use sets.
-    void computeDefUse(Function* func, bool forPhys);
+    void computeDefUse(Function* func);
     // Phase 2: iterative data-flow to convergence.
-    void livenessFixpoint(Function* func, bool forPhys);
+    void livenessFixpoint(Function* func);
     // Phase 3: sweep instructions removing dead defs.
-    bool eliminate(Function* func, bool forPhys);
+    bool eliminate(Function* func);
 
     bool isVirtualReg(unsigned reg) const {
         // Physical integer: 0-31, physical float: 32-63. Convention in backend
