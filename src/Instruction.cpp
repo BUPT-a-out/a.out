@@ -441,6 +441,7 @@ std::vector<unsigned> Instruction::getUsedIntegerRegs() const {
                     usedRegs.push_back(operands[0]->getRegNum());
                 }
             }
+            break;
         }
 
         case JALR: {
