@@ -15,6 +15,7 @@
 #include "RegAllocChaitin.h"
 #include "ValueReusePass.h"
 #include "Visit.h"
+#include "WhileBranchPredictionPass.h"
 
 // Debug output macro - only outputs when A_OUT_DEBUG is defined
 #ifdef A_OUT_DEBUG
@@ -52,6 +53,9 @@ std::string RISCV64Target::compileToAssembly(
 
     if (analysisManager != nullptr) {
         constantFoldingPass(riscv_module);  // 第1.6阶段：常量折叠优化
+        whileBranchPredictionPass(
+            riscv_module, module,
+            analysisManager);  // 第1.65阶段：while分支预测优化
         basicBlockReorderingPass(riscv_module);  // 第1.7阶段：基本块重排优化
 
         deadCodeEliminationPass(riscv_module, false);  // 第一阶段附加：DCE
@@ -68,7 +72,7 @@ std::string RISCV64Target::compileToAssembly(
         foldMemoryAccessPass(riscv_module);
 
         deadCodeEliminationPass(riscv_module, true);
-    }  // 第一阶段附加：DCE
+    }  // 第三阶段附加：DCE
 
     return riscv_module.toString();
 }
@@ -204,6 +208,37 @@ Module& RISCV64Target::basicBlockReorderingPass(riscv64::Module& module) {
     return module;
 }
 
+Module& RISCV64Target::whileBranchPredictionPass(
+    riscv64::Module& module, const midend::Module& mid_module,
+    const midend::AnalysisManager* analysisManager) {
+    DEBUG_OUT() << "\n=== Phase 1.65: While Branch Prediction (Invert & "
+                   "Fallthrough) ==="
+                << std::endl;
+    for (auto& function : module) {
+        if (function->empty()) continue;
+        const midend::Function* mid_func = nullptr;
+        for (auto* mf : mid_module) {
+            if (mf->getName() == function->getName()) {
+                mid_func = mf;
+                break;
+            }
+        }
+        const midend::LoopInfo* loopInfoPtr = nullptr;
+        if (analysisManager && mid_func) {
+            auto name = midend::LoopAnalysis::getName();
+            loopInfoPtr =
+                const_cast<midend::AnalysisManager*>(analysisManager)
+                    ->getAnalysis<midend::LoopInfo>(
+                        name, *const_cast<midend::Function*>(mid_func));
+        }
+        WhileBranchPredictionPass pass;
+        pass.runOnFunction(function.get(), mid_func, loopInfoPtr);
+    }
+    DEBUG_OUT() << module.toString() << std::endl;
+    DEBUG_OUT() << "=== While Branch Prediction Completed ===" << std::endl;
+    return module;
+}
+
 Module& RISCV64Target::RAGreedyPass(riscv64::Module& module) {
     DEBUG_OUT() << "\n=== Phase 2.0: RA Greedy ===" << std::endl;
 
@@ -300,7 +335,8 @@ Module& RISCV64Target::registerAllocationPass(
     return module;
 }
 
-Module& RISCV64Target::deadCodeEliminationPass(riscv64::Module& module, bool forPhys) {
+Module& RISCV64Target::deadCodeEliminationPass(riscv64::Module& module,
+                                               bool forPhys) {
     DEBUG_OUT() << "\n=== Post-RA Dead Code Elimination ===" << std::endl;
     DeadCodeElimination dce;
     for (auto& function : module) {
